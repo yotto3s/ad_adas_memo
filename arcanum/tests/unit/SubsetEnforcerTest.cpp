@@ -125,5 +125,139 @@ TEST(SubsetEnforcerTest, AcceptsAllComparisonAndLogicalOps) {
   EXPECT_TRUE(result.passed);
 }
 
+// TC-1: Delete expression rejection
+TEST(SubsetEnforcerTest, RejectsDeleteExpression) {
+  auto result = checkSubset(R"(
+    void foo() { int* p = new int(42); delete p; }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundDelete = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("delete") != std::string::npos) {
+      foundDelete = true;
+    }
+  }
+  EXPECT_TRUE(foundDelete);
+}
+
+// TC-2: try/catch rejection
+TEST(SubsetEnforcerTest, RejectsTryCatch) {
+  auto result = checkSubset(R"(
+    void foo() {
+      try { } catch (...) { }
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundTry = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("try") != std::string::npos) {
+      foundTry = true;
+    }
+  }
+  EXPECT_TRUE(foundTry);
+}
+
+// TC-3: goto rejection
+TEST(SubsetEnforcerTest, RejectsGoto) {
+  auto result = checkSubset(R"(
+    void foo() {
+      label:
+      goto label;
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundGoto = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("goto") != std::string::npos) {
+      foundGoto = true;
+    }
+  }
+  EXPECT_TRUE(foundGoto);
+}
+
+// TC-4: template function rejection
+TEST(SubsetEnforcerTest, RejectsTemplateFunction) {
+  auto result = checkSubset(R"(
+    template<typename T>
+    T identity(T x) { return x; }
+    void dummy() { identity(42); }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundTemplate = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("template") != std::string::npos) {
+      foundTemplate = true;
+    }
+  }
+  EXPECT_TRUE(foundTemplate);
+}
+
+// TC-5: void return type acceptance
+TEST(SubsetEnforcerTest, AcceptsVoidReturnFunction) {
+  auto result = checkSubset(R"(
+    void doNothing() { }
+  )");
+  EXPECT_TRUE(result.passed);
+}
+
+// TC-6: multiple return statement rejection (early return)
+TEST(SubsetEnforcerTest, RejectsEarlyReturn) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t foo(int32_t a) {
+      if (a < 0) return -1;
+      return a;
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundReturn = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("return") != std::string::npos) {
+      foundReturn = true;
+    }
+  }
+  EXPECT_TRUE(foundReturn);
+}
+
+// TC-7: recursion rejection
+TEST(SubsetEnforcerTest, RejectsRecursion) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t factorial(int32_t n) {
+      if (n <= 1) {
+        return 1;
+      } else {
+        return n * factorial(n - 1);
+      }
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundRecursion = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("recursive") != std::string::npos) {
+      foundRecursion = true;
+    }
+  }
+  EXPECT_TRUE(foundRecursion);
+}
+
+// CR-5: Reject functions inside namespaces
+TEST(SubsetEnforcerTest, RejectsNamespacedFunction) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    namespace myns {
+      int32_t add(int32_t a, int32_t b) { return a + b; }
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundNamespace = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("namespace") != std::string::npos) {
+      foundNamespace = true;
+    }
+  }
+  EXPECT_TRUE(foundNamespace);
+}
+
 } // namespace
 } // namespace arcanum

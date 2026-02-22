@@ -1,11 +1,11 @@
 #include "backend/Why3Runner.h"
 
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <array>
-#include <cstdio>
-#include <memory>
+#include <charconv>
 #include <regex>
 #include <sstream>
 
@@ -45,9 +45,14 @@ std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
         std::smatch durMatch;
         auto detailStr = match[3].str();
         if (std::regex_search(detailStr, durMatch, durationRegex)) {
-          double seconds = std::stod(durMatch[1].str());
-          result.duration = std::chrono::milliseconds(
-              static_cast<int>(seconds * 1000));
+          auto durStr = durMatch[1].str();
+          double seconds = 0.0;
+          auto [ptr, ec] = std::from_chars(
+              durStr.data(), durStr.data() + durStr.size(), seconds);
+          if (ec == std::errc{}) {
+            result.duration = std::chrono::milliseconds(
+                static_cast<int>(seconds * 1000));
+          }
         }
       }
 
@@ -70,26 +75,44 @@ std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
     return {err};
   }
 
-  // Build command: why3 prove -P z3 --timelimit=<timeout> <file.mlw>
-  std::string cmd = why3.get() + " prove -P z3 --timelimit=" +
-                    std::to_string(timeoutSeconds) + " " + mlwPath +
-                    " 2>&1";
+  // Build argument list for why3 prove
+  llvm::SmallVector<llvm::StringRef, 8> args;
+  args.push_back(why3.get());
+  args.push_back("prove");
+  args.push_back("-P");
+  args.push_back("z3");
+  std::string timelimitArg = "--timelimit=" + std::to_string(timeoutSeconds);
+  args.push_back(timelimitArg);
+  args.push_back(mlwPath);
 
-  // Execute and capture output
-  std::array<char, 4096> buffer;
-  std::string output;
-  std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"),
-                                                 pclose);
-  if (!pipe) {
+  // Create temp file to capture stdout+stderr
+  llvm::SmallString<128> outputPath;
+  std::error_code ec =
+      llvm::sys::fs::createTemporaryFile("why3out", "txt", outputPath);
+  if (ec) {
     ObligationResult err;
     err.name = "execution_error";
     err.status = ObligationStatus::Failure;
     return {err};
   }
 
-  while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-    output += buffer.data();
+  std::optional<llvm::StringRef> redirects[] = {
+      std::nullopt,                       // stdin
+      llvm::StringRef(outputPath),        // stdout
+      llvm::StringRef(outputPath),        // stderr -> same file
+  };
+
+  int exitCode = llvm::sys::ExecuteAndWait(
+      why3.get(), args, /*Env=*/std::nullopt, redirects);
+  (void)exitCode;
+
+  // Read output file
+  auto bufOrErr = llvm::MemoryBuffer::getFile(outputPath);
+  std::string output;
+  if (bufOrErr) {
+    output = (*bufOrErr)->getBuffer().str();
   }
+  llvm::sys::fs::remove(outputPath);
 
   return parseWhy3Output(output);
 }

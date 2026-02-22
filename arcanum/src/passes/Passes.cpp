@@ -1,15 +1,18 @@
 #include "passes/Passes.h"
 
 #include "mlir/IR/Verifier.h"
+#include "mlir/Pass/PassManager.h"
 
 namespace arcanum {
 
 mlir::LogicalResult runPasses(mlir::ModuleOp module) {
-  // Slice 1: identity pass-through.
-  // Just run the MLIR verifier to catch malformed IR.
+  // Set up PassManager infrastructure for future slices.
+  // Slice 1: identity pass-through with built-in verifier.
+  mlir::PassManager pm(module->getContext());
+
   // The PassManager's built-in verifier runs automatically after each pass.
-  // Since we have no passes in Slice 1, just verify the module manually.
-  if (mlir::verify(module).failed()) {
+  // No optimization passes are added for Slice 1.
+  if (pm.run(module).failed()) {
     return mlir::failure();
   }
 

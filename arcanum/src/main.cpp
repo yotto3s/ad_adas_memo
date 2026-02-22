@@ -1,3 +1,5 @@
+#include "DiagnosticTracker.h"
+#include "ExitCodes.h"
 #include "frontend/ContractParser.h"
 #include "frontend/SubsetEnforcer.h"
 #include "dialect/Lowering.h"
@@ -16,6 +18,7 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include <string>
+#include <vector>
 
 using namespace llvm;
 using namespace clang::tooling;
@@ -45,87 +48,104 @@ int main(int argc, const char** argv) {
       CommonOptionsParser::create(argc, argv, arcanumCategory);
   if (!expectedParser) {
     llvm::errs() << expectedParser.takeError();
-    return 5;
+    return arcanum::ExitInternalError;
   }
   CommonOptionsParser& optionsParser = expectedParser.get();
 
   if (mode != "verify") {
     llvm::errs() << "error: unsupported mode '" << mode
                  << "' (only 'verify' is supported in Slice 1)\n";
-    return 5;
+    return arcanum::ExitInternalError;
   }
 
   const auto& sourceFiles = optionsParser.getSourcePathList();
   if (sourceFiles.empty()) {
     llvm::errs() << "error: no input files\n";
-    return 5;
+    return arcanum::ExitInternalError;
   }
 
   // Validate input files exist
   for (const auto& file : sourceFiles) {
     if (!llvm::sys::fs::exists(file)) {
       llvm::errs() << "error: file not found: " << file << "\n";
-      return 5;
+      return arcanum::ExitInternalError;
     }
   }
 
-  // Stage 1: Clang Frontend — parse source into AST
+  // Stage 1: Clang Frontend — parse source into AST using buildASTs
   ClangTool tool(optionsParser.getCompilations(),
                  optionsParser.getSourcePathList());
   tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
       "-fparse-all-comments", ArgumentInsertPosition::BEGIN));
+  // Suppress errors from GCC-specific warning flags in compile_commands.json
+  // (e.g., -Wno-class-memaccess) when Clang processes them.
+  tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
+      "-Wno-unknown-warning-option", ArgumentInsertPosition::BEGIN));
+  tool.appendArgumentsAdjuster(getClangStripOutputAdjuster());
 
-  // Stages 2-8 will be wired here
-  // For now, the AST is captured in the FrontendAction and passed forward.
-
-  arcanum::ArcanumFrontendAction action;
-  auto result = tool.run(newFrontendActionFactory(&action).get());
-  if (result != 0) {
-    return 4; // Parse error
+  std::vector<std::unique_ptr<clang::ASTUnit>> astUnits;
+  int buildResult = tool.buildASTs(astUnits);
+  if (buildResult != 0 || astUnits.empty() || !astUnits[0]) {
+    llvm::errs() << "error: failed to parse input file\n";
+    return arcanum::ExitParseError;
   }
 
+  auto& astContext = astUnits[0]->getASTContext();
+
   // Stage 2: Subset Enforcer
-  auto enforceResult = arcanum::enforceSubset(action.getASTContext());
+  auto enforceResult = arcanum::enforceSubset(astContext);
   if (!enforceResult.passed) {
     for (const auto& diag : enforceResult.diagnostics) {
       llvm::errs() << diag << "\n";
     }
-    return 3;
+    return arcanum::ExitSubsetViolation;
   }
 
   // Stage 3: Contract Parser
-  auto contracts = arcanum::parseContracts(action.getASTContext());
+  auto contracts = arcanum::parseContracts(astContext);
 
   // Stage 4: Arc MLIR Lowering
+  arcanum::DiagnosticTracker::reset();
   mlir::MLIRContext mlirContext;
   auto arcModule =
-      arcanum::lowerToArc(mlirContext, action.getASTContext(), contracts);
+      arcanum::lowerToArc(mlirContext, astContext, contracts);
   if (!arcModule) {
     llvm::errs() << "error: lowering to Arc MLIR failed\n";
-    return 5;
+    return arcanum::ExitInternalError;
   }
 
   // Stage 5: MLIR Pass Manager
   if (arcanum::runPasses(*arcModule).failed()) {
     llvm::errs() << "error: MLIR verification failed\n";
-    return 5;
+    return arcanum::ExitInternalError;
   }
 
   // Stage 6: WhyML Emitter
   auto whymlResult = arcanum::emitWhyML(*arcModule);
   if (!whymlResult) {
     llvm::errs() << "error: WhyML emission failed\n";
-    return 5;
+    return arcanum::ExitInternalError;
   }
 
   // Stage 7: Why3 Runner
   auto obligations =
       arcanum::runWhy3(whymlResult->filePath, why3Path, timeout);
 
+  // Clean up the temporary .mlw file created by the WhyML emitter.
+  llvm::sys::fs::remove(whymlResult->filePath);
+
   // Stage 8: Report Generator
   auto report =
       arcanum::generateReport(obligations, whymlResult->locationMap);
-  llvm::outs() << report.text << "\n";
+  llvm::outs() << report.text;
+  if (arcanum::DiagnosticTracker::getFallbackCount() > 0) {
+    llvm::outs() << "\nWarning: "
+                 << arcanum::DiagnosticTracker::getFallbackCount()
+                 << " expression(s) used zero-constant fallback during "
+                    "lowering. Results may be unreliable.\n";
+  }
+  llvm::outs() << "\n";
 
-  return report.allPassed ? 0 : 1;
+  return report.allPassed ? arcanum::ExitSuccess
+                          : arcanum::ExitVerificationFailed;
 }

@@ -24,13 +24,34 @@ if [ -S "${DBUS_SOCKET_PATH}" ]; then
     DBUS_ENV=(-e "DBUS_SESSION_BUS_ADDRESS=unix:path=${DBUS_SOCKET_PATH}")
 fi
 
+# Mount credential files only if they exist (Docker creates empty dirs otherwise)
+CLAUDE_DIR_MOUNT=()
+if [ -d "${HOME}/.claude" ]; then
+    CLAUDE_DIR_MOUNT=(-v "${HOME}/.claude:/home/devuser/.claude")
+fi
+
+CLAUDE_JSON_MOUNT=()
+if [ -f "${HOME}/.claude.json" ]; then
+    CLAUDE_JSON_MOUNT=(-v "${HOME}/.claude.json:/home/devuser/.claude.json")
+fi
+
+CREDENTIALS_MOUNT=()
+if [ -f "${HOME}/.credentials.json" ]; then
+    CREDENTIALS_MOUNT=(-v "${HOME}/.credentials.json:/home/devuser/.credentials.json")
+fi
+
+SSH_MOUNT=()
+if [ -d "${HOME}/.ssh" ]; then
+    SSH_MOUNT=(-v "${HOME}/.ssh:/home/devuser/.ssh:ro")
+fi
+
 docker run -d \
     --name "${CONTAINER_NAME}" \
     -v "${PROJECT_DIR}:/workspace/ad-adas-memo" \
-    -v "${HOME}/.claude:/home/devuser/.claude" \
-    -v "${HOME}/.claude.json:/home/devuser/.claude.json" \
-    -v "${HOME}/.credentials.json:/home/devuser/.credentials.json" \
-    -v "${HOME}/.ssh:/home/devuser/.ssh:ro" \
+    ${CLAUDE_DIR_MOUNT[@]+"${CLAUDE_DIR_MOUNT[@]}"} \
+    ${CLAUDE_JSON_MOUNT[@]+"${CLAUDE_JSON_MOUNT[@]}"} \
+    ${CREDENTIALS_MOUNT[@]+"${CREDENTIALS_MOUNT[@]}"} \
+    ${SSH_MOUNT[@]+"${SSH_MOUNT[@]}"} \
     ${GITCONFIG_MOUNT[@]+"${GITCONFIG_MOUNT[@]}"} \
     ${DBUS_MOUNT[@]+"${DBUS_MOUNT[@]}"} \
     ${DBUS_ENV[@]+"${DBUS_ENV[@]}"} \

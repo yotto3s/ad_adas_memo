@@ -66,5 +66,130 @@ TEST(LoweringTest, LowersIfElseFunction) {
   EXPECT_TRUE(foundIf);
 }
 
+// TC-12: Verify contract attributes and body operations on lowered FuncOp
+TEST(LoweringTest, FuncOpHasContractAttributesAndBody) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+    #include <cstdint>
+    //@ requires: a >= 0 && a <= 1000
+    //@ ensures: \result >= 0
+    int32_t identity(int32_t a) {
+      return a;
+    }
+  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  module->walk([&](arc::FuncOp funcOp) {
+    EXPECT_EQ(funcOp.getSymName(), "identity");
+    // Check contract attributes are set
+    EXPECT_TRUE(funcOp.getRequiresAttr().has_value());
+    EXPECT_TRUE(funcOp.getEnsuresAttr().has_value());
+    // Check the function has a body with at least a return
+    EXPECT_FALSE(funcOp.getBody().empty());
+    auto& block = funcOp.getBody().front();
+    EXPECT_EQ(block.getNumArguments(), 1u); // one parameter
+    // Should end with a return op
+    bool hasReturn = false;
+    for (auto& op : block.getOperations()) {
+      if (llvm::isa<arc::ReturnOp>(&op)) {
+        hasReturn = true;
+      }
+    }
+    EXPECT_TRUE(hasReturn);
+  });
+}
+
+// TC-13: Lowering various expression types
+TEST(LoweringTest, LowersSubtraction) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+    #include <cstdint>
+    int32_t sub(int32_t a, int32_t b) {
+      return a - b;
+    }
+  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundSub = false;
+  module->walk([&](arc::SubOp) { foundSub = true; });
+  EXPECT_TRUE(foundSub);
+}
+
+TEST(LoweringTest, LowersComparison) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+    #include <cstdint>
+    bool isPositive(int32_t a) {
+      return a > 0;
+    }
+  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundCmp = false;
+  module->walk([&](arc::CmpOp) { foundCmp = true; });
+  EXPECT_TRUE(foundCmp);
+}
+
+TEST(LoweringTest, LowersVariableDeclaration) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+    #include <cstdint>
+    int32_t withVar(int32_t a) {
+      int32_t x = a + 1;
+      return x;
+    }
+  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundVar = false;
+  module->walk([&](arc::VarOp varOp) {
+    EXPECT_EQ(varOp.getName(), "x");
+    foundVar = true;
+  });
+  EXPECT_TRUE(foundVar);
+}
+
+TEST(LoweringTest, LowersFunctionWithoutContracts) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+    #include <cstdint>
+    int32_t noContract(int32_t a) {
+      return a;
+    }
+  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  module->walk([&](arc::FuncOp funcOp) {
+    // No contract attributes should be set
+    EXPECT_FALSE(funcOp.getRequiresAttr().has_value());
+    EXPECT_FALSE(funcOp.getEnsuresAttr().has_value());
+  });
+}
+
 } // namespace
 } // namespace arcanum

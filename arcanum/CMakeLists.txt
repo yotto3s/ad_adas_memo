@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(Arcanum LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 23)
+# C++17 is used instead of C++23 (spec target) because GCC 13 on Ubuntu 24.04
+# does not fully support C++23.  No C++23 features are required by Slice 1.
+# Re-evaluate when upgrading to GCC 14+ or using Clang exclusively.
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Set default build type to Debug if not specified
@@ -14,7 +17,12 @@ endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 # Common warning flags
-add_compile_options(-Wall -Wextra -Werror)
+# -Wno-unused-parameter is needed because MLIR headers have unused parameters
+# -Wno-covered-switch-default suppresses Clang warnings in MLIR-generated code
+add_compile_options(-Wall -Wextra -Werror -Wno-unused-parameter)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  add_compile_options(-Wno-covered-switch-default)
+endif()
 
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -53,6 +61,12 @@ message(STATUS "Using ClangConfig.cmake in: ${Clang_DIR}")
 set(ARCANUM_CLANG_INCLUDE_DIRS ${CLANG_INCLUDE_DIRS})
 
 # --- TableGen for Arc dialect ---
+# TableGen needs LLVM/MLIR include dirs in the INCLUDE_DIRECTORIES
+# directory property to resolve .td includes. We add them here temporarily
+# for TableGen, then remove them to avoid polluting GoogleTest with LLVM
+# headers (which cause cxxabi.h conflicts with GCC).
+set_property(DIRECTORY APPEND PROPERTY INCLUDE_DIRECTORIES
+  ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/src/dialect)
 
 # Generate dialect declarations/definitions from ArcOps.td
@@ -68,6 +82,12 @@ set(LLVM_TARGET_DEFINITIONS src/dialect/ArcTypes.td)
 mlir_tablegen(src/dialect/ArcTypes.h.inc -gen-typedef-decls)
 mlir_tablegen(src/dialect/ArcTypes.cpp.inc -gen-typedef-defs)
 add_public_tablegen_target(ArcTypesIncGen)
+
+# Remove LLVM/MLIR includes from directory property after TableGen is done.
+# This prevents them from polluting GoogleTest builds.
+get_property(_current_includes DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
+list(REMOVE_ITEM _current_includes ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})
+set_property(DIRECTORY PROPERTY INCLUDE_DIRECTORIES ${_current_includes})
 
 # --- Arc dialect library ---
 add_mlir_dialect_library(ArcDialect
@@ -88,7 +108,7 @@ add_mlir_dialect_library(ArcDialect
   MLIRSupport
   MLIRFuncDialect
 )
-target_include_directories(ArcDialect PUBLIC
+target_include_directories(ArcDialect SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
@@ -98,9 +118,11 @@ add_library(ArcanumFrontend
   src/frontend/SubsetEnforcer.cpp
   src/frontend/ContractParser.cpp
 )
-target_include_directories(ArcanumFrontend PUBLIC
+target_include_directories(ArcanumFrontend SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(ArcanumFrontend PUBLIC
   ${PROJECT_SOURCE_DIR}/src
 )
 target_link_libraries(ArcanumFrontend PUBLIC
@@ -115,10 +137,12 @@ target_link_libraries(ArcanumFrontend PUBLIC
 add_library(ArcanumLowering
   src/dialect/Lowering.cpp
 )
-target_include_directories(ArcanumLowering PUBLIC
+target_include_directories(ArcanumLowering SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(ArcanumLowering PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_BINARY_DIR}/src
 )
@@ -132,9 +156,11 @@ target_link_libraries(ArcanumLowering PUBLIC
 add_library(ArcanumPasses
   src/passes/Passes.cpp
 )
-target_include_directories(ArcanumPasses PUBLIC
+target_include_directories(ArcanumPasses SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
+)
+target_include_directories(ArcanumPasses PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_BINARY_DIR}/src
 )
@@ -149,9 +175,11 @@ add_library(ArcanumBackend
   src/backend/WhyMLEmitter.cpp
   src/backend/Why3Runner.cpp
 )
-target_include_directories(ArcanumBackend PUBLIC
+target_include_directories(ArcanumBackend SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
+)
+target_include_directories(ArcanumBackend PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_BINARY_DIR}/src
 )
@@ -165,6 +193,10 @@ target_link_libraries(ArcanumBackend PUBLIC
 add_library(ArcanumReport
   src/report/ReportGenerator.cpp
 )
+target_include_directories(ArcanumReport SYSTEM PUBLIC
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+  ${ARCANUM_MLIR_INCLUDE_DIRS}
+)
 target_include_directories(ArcanumReport PUBLIC
   ${PROJECT_SOURCE_DIR}/src
 )
@@ -174,10 +206,12 @@ target_link_libraries(ArcanumReport PUBLIC
 
 # --- CLI executable ---
 add_executable(arcanum src/main.cpp)
-target_include_directories(arcanum PRIVATE
+target_include_directories(arcanum SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(arcanum PRIVATE
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_BINARY_DIR}/src
 )

@@ -57,35 +57,35 @@ def Arc_AddOp : Arc_Op<"add", [Pure]> {
   let summary = "Checked integer addition";
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 def Arc_SubOp : Arc_Op<"sub", [Pure]> {
   let summary = "Checked integer subtraction";
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 def Arc_MulOp : Arc_Op<"mul", [Pure]> {
   let summary = "Checked integer multiplication";
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 def Arc_DivOp : Arc_Op<"div", [Pure]> {
   let summary = "Checked integer division";
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 def Arc_RemOp : Arc_Op<"rem", [Pure]> {
   let summary = "Checked integer remainder";
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -96,7 +96,7 @@ def Arc_CmpOp : Arc_Op<"cmp", [Pure]> {
   let summary = "Integer comparison";
   let arguments = (ins StrAttr:$predicate, AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$predicate `,` $lhs `,` $rhs attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -107,21 +107,21 @@ def Arc_AndOp : Arc_Op<"and", [Pure]> {
   let summary = "Logical AND";
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 def Arc_OrOp : Arc_Op<"or", [Pure]> {
   let summary = "Logical OR";
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 def Arc_NotOp : Arc_Op<"not", [Pure]> {
   let summary = "Logical NOT";
   let arguments = (ins AnyType:$operand);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$operand attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -132,13 +132,13 @@ def Arc_VarOp : Arc_Op<"var"> {
   let summary = "Local variable declaration";
   let arguments = (ins StrAttr:$name, AnyType:$init);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$name `=` $init attr-dict `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 def Arc_AssignOp : Arc_Op<"assign"> {
   let summary = "Variable assignment";
   let arguments = (ins AnyType:$target, AnyType:$value);
-  let assemblyFormat = "$target `=` $value attr-dict `:` type($value)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -148,7 +148,7 @@ def Arc_AssignOp : Arc_Op<"assign"> {
 def Arc_ReturnOp : Arc_Op<"return", [Terminator]> {
   let summary = "Function return";
   let arguments = (ins Optional<AnyType>:$value);
-  let assemblyFormat = "($value^ `:` type($value))? attr-dict";
+  let hasCustomAssemblyFormat = 1;
 }
 
 def Arc_IfOp : Arc_Op<"if"> {

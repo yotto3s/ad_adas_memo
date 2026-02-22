@@ -1,3 +1,4 @@
+// REQUIRES: why3
 // RUN: %not %arcanum --mode=verify %s 2>&1 | %FileCheck %s
 // CHECK: [FAIL]{{.*}}obligations
 

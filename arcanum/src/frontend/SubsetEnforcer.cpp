@@ -27,6 +27,24 @@ public:
     if (decl->isImplicit()) {
       return true;
     }
+    // Reject user-defined functions inside namespaces or classes.  Slice 1
+    // only processes top-level declarations; namespaced functions would pass
+    // SubsetEnforcer but be silently skipped by ContractParser/Lowering.
+    // We skip functions from system headers (e.g., std:: from <cstdint>).
+    if (auto* dc = decl->getDeclContext()) {
+      if (!dc->isTranslationUnit()) {
+        bool isSystemHeader =
+            ctx_.getSourceManager().isInSystemHeader(decl->getLocation());
+        // Allow methods (caught by virtual/class checks) and system headers
+        if (!llvm::isa<clang::CXXMethodDecl>(decl) && !isSystemHeader) {
+          addDiagnostic(
+              decl->getLocation(),
+              "functions inside namespaces or classes are not allowed in "
+              "Slice 1 (only top-level functions are supported)");
+          return true;
+        }
+      }
+    }
     // Reject virtual functions
     if (auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(decl)) {
       if (method->isVirtual()) {
@@ -39,6 +57,22 @@ public:
       addDiagnostic(decl->getLocation(),
                     "template functions are not allowed in Slice 1");
       return true;
+    }
+    // Check single return: reject early returns (return followed by more
+    // statements in the same block).  Returns in terminal if/else branches
+    // are allowed since they form a single structured exit.
+    if (decl->hasBody()) {
+      if (hasEarlyReturn(decl->getBody())) {
+        addDiagnostic(decl->getLocation(),
+                      "early return statements are not allowed in Slice 1");
+      }
+    }
+    // Check non-recursive (function does not call itself)
+    if (decl->hasBody()) {
+      if (callsSelf(decl, decl->getBody())) {
+        addDiagnostic(decl->getLocation(),
+                      "recursive functions are not allowed in Slice 1");
+      }
     }
     // Check return type
     checkType(decl->getReturnType(), decl->getLocation());
@@ -85,6 +119,67 @@ public:
   }
 
 private:
+  /// Check whether a statement (or any nested statement) contains a return.
+  bool containsReturn(const clang::Stmt* stmt) {
+    if (!stmt) return false;
+    if (llvm::isa<clang::ReturnStmt>(stmt)) return true;
+    for (const auto* child : stmt->children()) {
+      if (containsReturn(child)) return true;
+    }
+    return false;
+  }
+
+  /// Check for early returns: a return is "early" if it can cause the
+  /// function to exit before reaching the end of a compound statement.
+  /// Returns inside terminal if/else branches (where both branches return)
+  /// are fine because they represent structured single-exit.
+  bool hasEarlyReturn(const clang::Stmt* stmt) {
+    if (!stmt) return false;
+    if (const auto* compound = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
+      for (auto it = compound->body_begin(); it != compound->body_end();
+           ++it) {
+        bool isLast = (std::next(it) == compound->body_end());
+        // A bare return statement followed by more statements
+        if (llvm::isa<clang::ReturnStmt>(*it) && !isLast) {
+          return true;
+        }
+        // An if-without-else that contains a return, followed by more
+        // statements -- this is the "guard clause" / early return pattern.
+        if (!isLast) {
+          if (const auto* ifStmt = llvm::dyn_cast<clang::IfStmt>(*it)) {
+            if (!ifStmt->getElse() && containsReturn(ifStmt->getThen())) {
+              return true;
+            }
+          }
+        }
+        if (hasEarlyReturn(*it)) {
+          return true;
+        }
+      }
+    } else {
+      for (const auto* child : stmt->children()) {
+        if (hasEarlyReturn(child)) return true;
+      }
+    }
+    return false;
+  }
+
+  bool callsSelf(const clang::FunctionDecl* funcDecl,
+                 const clang::Stmt* stmt) {
+    if (!stmt) return false;
+    if (const auto* call = llvm::dyn_cast<clang::CallExpr>(stmt)) {
+      if (const auto* callee = call->getDirectCallee()) {
+        if (callee->getCanonicalDecl() == funcDecl->getCanonicalDecl()) {
+          return true;
+        }
+      }
+    }
+    for (const auto* child : stmt->children()) {
+      if (callsSelf(funcDecl, child)) return true;
+    }
+    return false;
+  }
+
   void checkType(clang::QualType type, clang::SourceLocation loc) {
     type = type.getCanonicalType();
     // Allow void (for functions returning void, though Slice 1 expects

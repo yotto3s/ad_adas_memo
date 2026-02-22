@@ -1,5 +1,3 @@
-# Test targets are added by the test infrastructure task (Task 10).
-# This file is a placeholder to satisfy add_subdirectory(tests).
 # Arcanum test infrastructure
 # GoogleTest via FetchContent + lit integration tests
 
@@ -23,10 +21,12 @@ include(GoogleTest)
 
 # --- SubsetEnforcerTest ---
 add_executable(SubsetEnforcerTest unit/SubsetEnforcerTest.cpp)
-target_include_directories(SubsetEnforcerTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
+target_include_directories(SubsetEnforcerTest SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(SubsetEnforcerTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
 )
 target_link_libraries(SubsetEnforcerTest PRIVATE
   ArcanumFrontend
@@ -37,10 +37,12 @@ gtest_discover_tests(SubsetEnforcerTest)
 
 # --- ContractParserTest ---
 add_executable(ContractParserTest unit/ContractParserTest.cpp)
-target_include_directories(ContractParserTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
+target_include_directories(ContractParserTest SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(ContractParserTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
 )
 target_link_libraries(ContractParserTest PRIVATE
   ArcanumFrontend
@@ -51,11 +53,13 @@ gtest_discover_tests(ContractParserTest)
 
 # --- ArcDialectTest ---
 add_executable(ArcDialectTest unit/ArcDialectTest.cpp)
+target_include_directories(ArcDialectTest SYSTEM PRIVATE
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+  ${ARCANUM_MLIR_INCLUDE_DIRS}
+)
 target_include_directories(ArcDialectTest PRIVATE
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_BINARY_DIR}/src
-  ${ARCANUM_LLVM_INCLUDE_DIRS}
-  ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
 target_link_libraries(ArcDialectTest PRIVATE
   ArcDialect
@@ -66,12 +70,14 @@ gtest_discover_tests(ArcDialectTest)
 
 # --- LoweringTest ---
 add_executable(LoweringTest unit/LoweringTest.cpp)
-target_include_directories(LoweringTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+target_include_directories(LoweringTest SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(LoweringTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_BINARY_DIR}/src
 )
 target_link_libraries(LoweringTest PRIVATE
   ArcanumLowering
@@ -85,12 +91,14 @@ gtest_discover_tests(LoweringTest)
 
 # --- WhyMLEmitterTest ---
 add_executable(WhyMLEmitterTest unit/WhyMLEmitterTest.cpp)
-target_include_directories(WhyMLEmitterTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+target_include_directories(WhyMLEmitterTest SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(WhyMLEmitterTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_BINARY_DIR}/src
 )
 target_link_libraries(WhyMLEmitterTest PRIVATE
   ArcanumBackend
@@ -106,9 +114,11 @@ gtest_discover_tests(WhyMLEmitterTest)
 
 # --- Why3RunnerTest ---
 add_executable(Why3RunnerTest unit/Why3RunnerTest.cpp)
+target_include_directories(Why3RunnerTest SYSTEM PRIVATE
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+)
 target_include_directories(Why3RunnerTest PRIVATE
   ${PROJECT_SOURCE_DIR}/src
-  ${ARCANUM_LLVM_INCLUDE_DIRS}
 )
 target_link_libraries(Why3RunnerTest PRIVATE
   ArcanumBackend
@@ -119,16 +129,23 @@ gtest_discover_tests(Why3RunnerTest)
 
 # --- ReportGeneratorTest ---
 add_executable(ReportGeneratorTest unit/ReportGeneratorTest.cpp)
+target_include_directories(ReportGeneratorTest SYSTEM PRIVATE
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+  ${ARCANUM_MLIR_INCLUDE_DIRS}
+)
 target_include_directories(ReportGeneratorTest PRIVATE
   ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_BINARY_DIR}/src
 )
 target_link_libraries(ReportGeneratorTest PRIVATE
   ArcanumReport
+  ArcanumBackend
+  ArcDialect
   gtest_main
+  MLIRIR
   LLVMSupport
 )
 gtest_discover_tests(ReportGeneratorTest)
 
 # --- Lit tests ---
 add_subdirectory(lit)
->>>>>>> f4df39f (fix(arcanum): align test infrastructure and CI with implementation plan)

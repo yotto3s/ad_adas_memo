@@ -70,5 +70,33 @@ TEST(ReportGeneratorTest, EmptyObligations) {
   EXPECT_NE(report.text.find("Summary"), std::string::npos);
 }
 
+// TC-23: Mixed obligation statuses
+TEST(ReportGeneratorTest, MixedObligationStatuses) {
+  std::vector<ObligationResult> obligations;
+  obligations.push_back(
+      {"overflow'vc", ObligationStatus::Valid,
+       std::chrono::milliseconds(50)});
+  obligations.push_back(
+      {"postcondition'vc", ObligationStatus::Timeout,
+       std::chrono::milliseconds(30000)});
+  obligations.push_back(
+      {"precondition'vc", ObligationStatus::Unknown,
+       std::chrono::milliseconds(0)});
+  obligations.push_back(
+      {"assertion'vc", ObligationStatus::Failure,
+       std::chrono::milliseconds(0)});
+
+  std::map<std::string, LocationEntry> locMap;
+  locMap["mixed_func"] = {"mixed_func", "input.cpp", 5};
+
+  auto report = generateReport(obligations, locMap);
+
+  EXPECT_FALSE(report.allPassed);
+  // With mixed unknown+timeout, FAIL takes priority over TIMEOUT
+  EXPECT_EQ(report.failCount, 1);
+  EXPECT_NE(report.text.find("[FAIL]"), std::string::npos);
+  EXPECT_NE(report.text.find("Summary"), std::string::npos);
+}
+
 } // namespace
 } // namespace arcanum

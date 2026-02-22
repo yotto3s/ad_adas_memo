@@ -18,6 +18,11 @@ struct ObligationResult {
   std::string name;
   ObligationStatus status = ObligationStatus::Unknown;
   std::chrono::milliseconds duration{0};
+  /// Name of the function this obligation belongs to.
+  /// Populated when multi-function reporting is implemented; empty for now.
+  /// This field is a data model preparation for grouping obligations by
+  /// function in future slices (see CR-8).
+  std::string functionName;
 };
 
 /// Run Why3 on a .mlw file with the given solver and timeout.

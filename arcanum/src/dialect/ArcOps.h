@@ -2,7 +2,7 @@
 #define ARCANUM_DIALECT_ARCOPS_H
 
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/FunctionInterfaces.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 

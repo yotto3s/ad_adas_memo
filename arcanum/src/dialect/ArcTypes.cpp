@@ -13,6 +13,6 @@ using namespace arcanum::arc;
 void ArcDialect::registerTypes() {
   addTypes<
 #define GET_TYPEDEF_LIST
-#include "dialect/ArcTypes.h.inc"
+#include "dialect/ArcTypes.cpp.inc"
       >();
 }

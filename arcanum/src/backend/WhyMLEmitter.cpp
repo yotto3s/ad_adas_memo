@@ -8,7 +8,6 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <fstream>
 #include <sstream>
 
 namespace arcanum {
@@ -16,6 +15,12 @@ namespace {
 
 /// Convert a contract expression string from Arc format to WhyML format.
 /// Transforms: \result -> result, && -> /\, || -> \/, etc.
+///
+/// The input is a serialized contract expression from serializeExpr() in
+/// Lowering.cpp.  It uses C-like operators (&&, ||, /, %) and \result.
+/// Unary negation is serialized as "-<operand>" by serializeExpr(); we
+/// handle it here but note that WhyML uses prefix "-" natively, so no
+/// translation is needed for the "-" character itself.
 std::string contractToWhyML(llvm::StringRef contract) {
   std::string result;
   size_t i = 0;
@@ -35,6 +40,26 @@ std::string contractToWhyML(llvm::StringRef contract) {
     } else if (contract.substr(i).starts_with("!=")) {
       result += "<>";
       i += 2;
+    } else if (contract[i] == '!' && (i + 1 >= contract.size() || contract[i + 1] != '=')) {
+      result += "not ";
+      ++i;
+    } else if (contract[i] == '%') {
+      result += " mod ";
+      ++i;
+    } else if (contract[i] == '/') {
+      // The input comes from serializeExpr() which uses C-like operators.
+      // The `/\` sequence cannot appear in the input (that is a WhyML AND
+      // operator, not a serialized Arc construct).  We must check for `\`
+      // after `/` anyway to be defensive: if it appears, the `/` is not a
+      // division operator but an unexpected token, so we skip translation.
+      if (i + 1 < contract.size() && contract[i + 1] == '\\') {
+        // Defensive: unexpected `/\` in input -- output literally.
+        result += contract[i];
+        ++i;
+      } else {
+        result += " div ";
+        ++i;
+      }
     } else {
       result += contract[i];
       ++i;
@@ -48,7 +73,6 @@ std::string contractToWhyML(llvm::StringRef contract) {
 std::string toModuleName(llvm::StringRef funcName) {
   std::string result = funcName.str();
   if (!result.empty()) {
-    result[0] = std::toupper(result[0]);
     // Convert snake_case to CamelCase for module name
     std::string camel;
     bool nextUpper = true;
@@ -56,7 +80,8 @@ std::string toModuleName(llvm::StringRef funcName) {
       if (c == '_') {
         nextUpper = true;
       } else if (nextUpper) {
-        camel += std::toupper(c);
+        camel += static_cast<char>(
+            std::toupper(static_cast<unsigned char>(c)));
         nextUpper = false;
       } else {
         camel += c;
@@ -65,6 +90,21 @@ std::string toModuleName(llvm::StringRef funcName) {
     return camel;
   }
   return "Module";
+}
+
+/// Extract the param_names attribute from a FuncOp into a vector of strings.
+/// Falls back to "argN" naming if the attribute is missing or has fewer
+/// entries than the function has arguments.
+llvm::SmallVector<std::string> getParamNames(arc::FuncOp funcOp) {
+  llvm::SmallVector<std::string> names;
+  if (auto paramNamesAttr =
+          funcOp->getAttrOfType<mlir::ArrayAttr>("param_names")) {
+    for (auto attr : paramNamesAttr) {
+      names.push_back(
+          llvm::cast<mlir::StringAttr>(attr).getValue().str());
+    }
+  }
+  return names;
 }
 
 class WhyMLWriter {
@@ -90,9 +130,16 @@ public:
       return std::nullopt;
     }
 
-    std::ofstream out(tmpPath.c_str());
+    llvm::raw_fd_ostream out(tmpPath, ec);
+    if (ec) {
+      return std::nullopt;
+    }
     out << result.whymlText;
     out.close();
+    if (out.has_error()) {
+      out.clear_error();
+      return std::nullopt;
+    }
 
     result.filePath = tmpPath.str().str();
     return result;
@@ -108,14 +155,16 @@ private:
     out << "  use int.Int\n\n";
 
     // Function signature
-    auto funcType = funcOp.getFunctionType();
     out << "  let " << funcName << " ";
 
-    // Parameters
+    // Parameters - use original C++ names from param_names attribute
     auto& entryBlock = funcOp.getBody().front();
+    auto paramNames = getParamNames(funcOp);
     for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
-      // Try to get parameter name from source location or use default
-      out << "(arg" << i << ": int) ";
+      std::string pname =
+          (i < paramNames.size()) ? paramNames[i]
+                                  : ("arg" + std::to_string(i));
+      out << "(" << pname << ": int) ";
     }
     out << ": int\n";
 
@@ -156,14 +205,43 @@ private:
     // Map MLIR values to WhyML variable names
     llvm::DenseMap<mlir::Value, std::string> nameMap;
 
-    // Map block arguments to parameter names
+    // Map block arguments to original C++ parameter names
+    auto paramNames = getParamNames(funcOp);
     for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
-      nameMap[entryBlock.getArgument(i)] = "arg" + std::to_string(i);
+      std::string pname =
+          (i < paramNames.size()) ? paramNames[i]
+                                  : ("arg" + std::to_string(i));
+      nameMap[entryBlock.getArgument(i)] = pname;
     }
 
     for (auto& op : entryBlock.getOperations()) {
       emitOp(op, out, nameMap);
     }
+  }
+
+  /// Emit a binary arithmetic op with an i32 overflow assertion.
+  void emitArithWithOverflowCheck(
+      mlir::Value result, mlir::Value lhsVal, mlir::Value rhsVal,
+      const std::string& whymlOp, std::ostringstream& out,
+      llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+    auto lhs = getExpr(lhsVal, nameMap);
+    auto rhs = getExpr(rhsVal, nameMap);
+    auto expr = "(" + lhs + " " + whymlOp + " " + rhs + ")";
+    out << "    assert { -2147483648 <= " << lhs << " " << whymlOp << " "
+        << rhs << " <= 2147483647 };\n";
+    nameMap[result] = expr;
+  }
+
+  /// Emit a division-like op with a divisor-not-zero assertion.
+  void emitDivLikeOp(
+      mlir::Value result, mlir::Value lhsVal, mlir::Value rhsVal,
+      const std::string& whymlFunc, std::ostringstream& out,
+      llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+    auto lhs = getExpr(lhsVal, nameMap);
+    auto rhs = getExpr(rhsVal, nameMap);
+    auto expr = "(" + whymlFunc + " " + lhs + " " + rhs + ")";
+    out << "    assert { " << rhs << " <> 0 };\n";
+    nameMap[result] = expr;
   }
 
   void emitOp(mlir::Operation& op, std::ostringstream& out,
@@ -178,42 +256,22 @@ private:
       }
       nameMap[constOp.getResult()] = valStr;
     } else if (auto addOp = llvm::dyn_cast<arc::AddOp>(&op)) {
-      auto lhs = getExpr(addOp.getLhs(), nameMap);
-      auto rhs = getExpr(addOp.getRhs(), nameMap);
-      auto expr = "(" + lhs + " + " + rhs + ")";
-
-      // Emit overflow assertion for trap mode
-      out << "    (* overflow check for addition *)\n";
-      out << "    assert { -2147483648 <= " << lhs << " + " << rhs
-          << " <= 2147483647 };\n";
-
-      nameMap[addOp.getResult()] = expr;
+      emitArithWithOverflowCheck(
+          addOp.getResult(), addOp.getLhs(), addOp.getRhs(), "+", out, nameMap);
     } else if (auto subOp = llvm::dyn_cast<arc::SubOp>(&op)) {
-      auto lhs = getExpr(subOp.getLhs(), nameMap);
-      auto rhs = getExpr(subOp.getRhs(), nameMap);
-      auto expr = "(" + lhs + " - " + rhs + ")";
-      out << "    assert { -2147483648 <= " << lhs << " - " << rhs
-          << " <= 2147483647 };\n";
-      nameMap[subOp.getResult()] = expr;
+      emitArithWithOverflowCheck(
+          subOp.getResult(), subOp.getLhs(), subOp.getRhs(), "-", out, nameMap);
     } else if (auto mulOp = llvm::dyn_cast<arc::MulOp>(&op)) {
-      auto lhs = getExpr(mulOp.getLhs(), nameMap);
-      auto rhs = getExpr(mulOp.getRhs(), nameMap);
-      auto expr = "(" + lhs + " * " + rhs + ")";
-      out << "    assert { -2147483648 <= " << lhs << " * " << rhs
-          << " <= 2147483647 };\n";
-      nameMap[mulOp.getResult()] = expr;
+      emitArithWithOverflowCheck(
+          mulOp.getResult(), mulOp.getLhs(), mulOp.getRhs(), "*", out, nameMap);
     } else if (auto divOp = llvm::dyn_cast<arc::DivOp>(&op)) {
-      auto lhs = getExpr(divOp.getLhs(), nameMap);
-      auto rhs = getExpr(divOp.getRhs(), nameMap);
-      auto expr = "(div " + lhs + " " + rhs + ")";
-      out << "    assert { " << rhs << " <> 0 };\n";
-      nameMap[divOp.getResult()] = expr;
+      emitDivLikeOp(
+          divOp.getResult(), divOp.getLhs(), divOp.getRhs(), "div", out,
+          nameMap);
     } else if (auto remOp = llvm::dyn_cast<arc::RemOp>(&op)) {
-      auto lhs = getExpr(remOp.getLhs(), nameMap);
-      auto rhs = getExpr(remOp.getRhs(), nameMap);
-      auto expr = "(mod " + lhs + " " + rhs + ")";
-      out << "    assert { " << rhs << " <> 0 };\n";
-      nameMap[remOp.getResult()] = expr;
+      emitDivLikeOp(
+          remOp.getResult(), remOp.getLhs(), remOp.getRhs(), "mod", out,
+          nameMap);
     } else if (auto cmpOp = llvm::dyn_cast<arc::CmpOp>(&op)) {
       auto lhs = getExpr(cmpOp.getLhs(), nameMap);
       auto rhs = getExpr(cmpOp.getRhs(), nameMap);
@@ -225,6 +283,11 @@ private:
       else if (pred == "ge") whymlOp = ">=";
       else if (pred == "eq") whymlOp = "=";
       else if (pred == "ne") whymlOp = "<>";
+      else {
+        llvm::errs() << "warning: unknown comparison predicate '" << pred
+                     << "', defaulting to '='\n";
+        whymlOp = "=";
+      }
       nameMap[cmpOp.getResult()] = "(" + lhs + " " + whymlOp + " " + rhs + ")";
     } else if (auto andOp = llvm::dyn_cast<arc::AndOp>(&op)) {
       auto lhs = getExpr(andOp.getLhs(), nameMap);
@@ -247,8 +310,23 @@ private:
       auto name = varOp.getName().str();
       out << "    let " << name << " = " << init << " in\n";
       nameMap[varOp.getResult()] = name;
+    } else if (auto ifOp = llvm::dyn_cast<arc::IfOp>(&op)) {
+      auto cond = getExpr(ifOp.getCondition(), nameMap);
+      out << "    if " << cond << " then\n";
+      // Emit then region
+      if (!ifOp.getThenRegion().empty()) {
+        for (auto& thenOp : ifOp.getThenRegion().front().getOperations()) {
+          emitOp(thenOp, out, nameMap);
+        }
+      }
+      // Emit else region
+      if (!ifOp.getElseRegion().empty()) {
+        out << "    else\n";
+        for (auto& elseOp : ifOp.getElseRegion().front().getOperations()) {
+          emitOp(elseOp, out, nameMap);
+        }
+      }
     }
-    // Note: IfOp handling is more complex and will emit if-then-else in WhyML
   }
 
   std::string getExpr(mlir::Value val,
@@ -257,6 +335,7 @@ private:
     if (it != nameMap.end()) {
       return it->second;
     }
+    llvm::errs() << "warning: unmapped MLIR value in WhyML emission\n";
     return "?unknown?";
   }
 

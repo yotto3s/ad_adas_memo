@@ -76,7 +76,8 @@ public:
 
 private:
   void skipWhitespace() {
-    while (pos_ < text_.size() && std::isspace(text_[pos_])) {
+    while (pos_ < text_.size() &&
+           std::isspace(static_cast<unsigned char>(text_[pos_]))) {
       ++pos_;
     }
   }
@@ -92,8 +93,10 @@ private:
 
   ContractExprPtr parseOr() {
     auto lhs = parseAnd();
+    if (!lhs) return nullptr;
     while (matchString("||")) {
       auto rhs = parseAnd();
+      if (!rhs) return nullptr;
       lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Or, lhs, rhs);
     }
     return lhs;
@@ -101,8 +104,10 @@ private:
 
   ContractExprPtr parseAnd() {
     auto lhs = parseComparison();
+    if (!lhs) return nullptr;
     while (matchString("&&")) {
       auto rhs = parseComparison();
+      if (!rhs) return nullptr;
       lhs = ContractExpr::makeBinaryOp(BinaryOpKind::And, lhs, rhs);
     }
     return lhs;
@@ -110,29 +115,36 @@ private:
 
   ContractExprPtr parseComparison() {
     auto lhs = parseAddSub();
+    if (!lhs) return nullptr;
     skipWhitespace();
     if (matchString("<=")) {
       auto rhs = parseAddSub();
+      if (!rhs) return nullptr;
       return ContractExpr::makeBinaryOp(BinaryOpKind::Le, lhs, rhs);
     }
     if (matchString(">=")) {
       auto rhs = parseAddSub();
+      if (!rhs) return nullptr;
       return ContractExpr::makeBinaryOp(BinaryOpKind::Ge, lhs, rhs);
     }
     if (matchString("==")) {
       auto rhs = parseAddSub();
+      if (!rhs) return nullptr;
       return ContractExpr::makeBinaryOp(BinaryOpKind::Eq, lhs, rhs);
     }
     if (matchString("!=")) {
       auto rhs = parseAddSub();
+      if (!rhs) return nullptr;
       return ContractExpr::makeBinaryOp(BinaryOpKind::Ne, lhs, rhs);
     }
     if (matchString("<")) {
       auto rhs = parseAddSub();
+      if (!rhs) return nullptr;
       return ContractExpr::makeBinaryOp(BinaryOpKind::Lt, lhs, rhs);
     }
     if (matchString(">")) {
       auto rhs = parseAddSub();
+      if (!rhs) return nullptr;
       return ContractExpr::makeBinaryOp(BinaryOpKind::Gt, lhs, rhs);
     }
     return lhs;
@@ -140,13 +152,16 @@ private:
 
   ContractExprPtr parseAddSub() {
     auto lhs = parseMulDiv();
+    if (!lhs) return nullptr;
     skipWhitespace();
     while (true) {
       if (matchString("+")) {
         auto rhs = parseMulDiv();
+        if (!rhs) return nullptr;
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Add, lhs, rhs);
       } else if (matchString("-")) {
         auto rhs = parseMulDiv();
+        if (!rhs) return nullptr;
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Sub, lhs, rhs);
       } else {
         break;
@@ -157,16 +172,20 @@ private:
 
   ContractExprPtr parseMulDiv() {
     auto lhs = parseUnary();
+    if (!lhs) return nullptr;
     skipWhitespace();
     while (true) {
       if (matchString("*")) {
         auto rhs = parseUnary();
+        if (!rhs) return nullptr;
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Mul, lhs, rhs);
       } else if (matchString("/")) {
         auto rhs = parseUnary();
+        if (!rhs) return nullptr;
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Div, lhs, rhs);
       } else if (matchString("%")) {
         auto rhs = parseUnary();
+        if (!rhs) return nullptr;
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Rem, lhs, rhs);
       } else {
         break;
@@ -179,10 +198,12 @@ private:
     skipWhitespace();
     if (matchString("!")) {
       auto operand = parseUnary();
+      if (!operand) return nullptr;
       return ContractExpr::makeUnaryOp(UnaryOpKind::Not, operand);
     }
     if (matchString("-")) {
       auto operand = parsePrimary();
+      if (!operand) return nullptr;
       return ContractExpr::makeUnaryOp(UnaryOpKind::Neg, operand);
     }
     return parsePrimary();
@@ -191,7 +212,7 @@ private:
   ContractExprPtr parsePrimary() {
     skipWhitespace();
     if (pos_ >= text_.size()) {
-      return ContractExpr::makeIntLiteral(0); // Error fallback
+      return nullptr; // Error: unexpected end of expression
     }
     // Parenthesized expression
     if (text_[pos_] == '(') {
@@ -215,26 +236,33 @@ private:
       return ContractExpr::makeBoolLiteral(false);
     }
     // Integer literal
-    if (std::isdigit(text_[pos_])) {
+    if (std::isdigit(static_cast<unsigned char>(text_[pos_]))) {
       size_t start = pos_;
-      while (pos_ < text_.size() && std::isdigit(text_[pos_])) {
+      while (pos_ < text_.size() &&
+             std::isdigit(static_cast<unsigned char>(text_[pos_]))) {
         ++pos_;
       }
-      int64_t val = std::stoll(text_.substr(start, pos_ - start).str());
+      int64_t val = 0;
+      auto sub = text_.substr(start, pos_ - start);
+      if (sub.getAsInteger(10, val)) {
+        return nullptr; // Error: invalid integer literal
+      }
       return ContractExpr::makeIntLiteral(val);
     }
     // Identifier (parameter name)
-    if (std::isalpha(text_[pos_]) || text_[pos_] == '_') {
+    if (std::isalpha(static_cast<unsigned char>(text_[pos_])) ||
+        text_[pos_] == '_') {
       size_t start = pos_;
       while (pos_ < text_.size() &&
-             (std::isalnum(text_[pos_]) || text_[pos_] == '_')) {
+             (std::isalnum(static_cast<unsigned char>(text_[pos_])) ||
+              text_[pos_] == '_')) {
         ++pos_;
       }
       return ContractExpr::makeParamRef(
           text_.substr(start, pos_ - start).str());
     }
-    // Fallback
-    return ContractExpr::makeIntLiteral(0);
+    // Fallback: unrecognized token
+    return nullptr;
   }
 
   llvm::StringRef text_;

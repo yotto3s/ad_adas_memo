@@ -1,3 +1,4 @@
+// REQUIRES: why3
 // RUN: %arcanum --mode=verify %s | %FileCheck %s
 // CHECK: [PASS]{{.*}}safe_add{{.*}}obligations proven
 

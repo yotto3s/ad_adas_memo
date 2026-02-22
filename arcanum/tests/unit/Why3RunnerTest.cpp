@@ -5,6 +5,7 @@
 namespace arcanum {
 namespace {
 
+// TC-20/TC-21: ParsesValidObligation with name and duration assertions
 TEST(Why3RunnerTest, ParsesValidObligation) {
   std::string output = R"(
 File "test.mlw", line 5, characters 10-30:
@@ -13,6 +14,10 @@ File "test.mlw", line 5, characters 10-30:
   auto results = parseWhy3Output(output);
   ASSERT_GE(results.size(), 1u);
   EXPECT_EQ(results[0].status, ObligationStatus::Valid);
+  // TC-21: Assert parsed obligation name
+  EXPECT_EQ(results[0].name, "safe_add'vc");
+  // TC-20: Assert parsed duration value (0.01s = 10ms)
+  EXPECT_EQ(results[0].duration.count(), 10);
 }
 
 TEST(Why3RunnerTest, ParsesTimeoutObligation) {

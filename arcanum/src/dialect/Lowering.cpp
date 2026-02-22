@@ -1,16 +1,20 @@
 #include "dialect/Lowering.h"
+#include "DiagnosticTracker.h"
 #include "dialect/ArcDialect.h"
 #include "dialect/ArcOps.h"
 #include "dialect/ArcTypes.h"
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ExprCXX.h"
 #include "clang/AST/Stmt.h"
+#include "clang/Basic/SourceManager.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <string>
 
@@ -57,6 +61,15 @@ private:
 
   mlir::Type getArcType(clang::QualType type) {
     auto canonical = type.getCanonicalType();
+    if (canonical->isVoidType()) {
+      // Void type should not appear in Slice 1 (SubsetEnforcer allows void
+      // return types, but they produce no return value).  Map to i32 as a
+      // conservative fallback; future slices will handle void properly.
+      llvm::errs()
+          << "warning: void type mapped to i32 in getArcType fallback\n";
+      DiagnosticTracker::recordFallback();
+      return arc::I32Type::get(&mlirCtx_);
+    }
     if (canonical->isBooleanType()) {
       return arc::BoolType::get(&mlirCtx_);
     }
@@ -101,7 +114,17 @@ private:
 
     // Create arc.func
     auto funcOp = builder_.create<arc::FuncOp>(
-        loc, name, mlir::TypeAttr::get(funcType), requiresAttr, ensuresAttr);
+        loc, builder_.getStringAttr(name),
+        mlir::TypeAttr::get(funcType), requiresAttr, ensuresAttr);
+
+    // Store parameter names as an attribute for the WhyML emitter
+    llvm::SmallVector<mlir::Attribute> paramNameAttrs;
+    for (const auto* param : funcDecl->parameters()) {
+      paramNameAttrs.push_back(
+          builder_.getStringAttr(param->getNameAsString()));
+    }
+    funcOp->setAttr("param_names",
+                     builder_.getArrayAttr(paramNameAttrs));
 
     // Create entry block with parameters
     auto& entryBlock = funcOp.getBody().emplaceBlock();
@@ -145,6 +168,13 @@ private:
         }
       }
     } else if (auto* ifStmt = llvm::dyn_cast<clang::IfStmt>(stmt)) {
+      // Limitation (Slice 1): IfOp lowering does not propagate return values
+      // out of if/else branches.  Mutations to valueMap inside then/else
+      // regions may not be visible after the IfOp.  Combined with
+      // unimplemented assignment lowering, non-terminal if/else (i.e.,
+      // if/else that is not the last statement with returns in both
+      // branches) may produce incorrect MLIR.  SubsetEnforcer's early-return
+      // check partially mitigates this by rejecting guard-clause patterns.
       auto cond = lowerExpr(ifStmt->getCond(), valueMap);
       auto loc = getLoc(ifStmt->getIfLoc());
       auto ifOp = builder_.create<arc::IfOp>(loc, mlir::TypeRange{}, cond);
@@ -191,7 +221,11 @@ private:
       if (it != valueMap.end()) {
         return it->second;
       }
-      // Fallback: return a zero constant
+      // Fallback: return a zero constant with diagnostic
+      llvm::errs() << "warning: unknown declaration reference '"
+                   << declRef->getDecl()->getNameAsString()
+                   << "', using zero fallback\n";
+      DiagnosticTracker::recordFallback();
       return builder_.create<arc::ConstantOp>(
           loc, arc::I32Type::get(&mlirCtx_), builder_.getI32IntegerAttr(0));
     }
@@ -242,6 +276,8 @@ private:
         return builder_.create<arc::OrOp>(
             loc, arc::BoolType::get(&mlirCtx_), lhs, rhs);
       default:
+        llvm::errs() << "warning: unhandled binary operator opcode "
+                     << binOp->getOpcodeStr() << "\n";
         break;
       }
     }
@@ -262,7 +298,10 @@ private:
       }
     }
 
-    // Fallback: return zero constant
+    // Fallback: return zero constant with diagnostic
+    llvm::errs() << "warning: unrecognized expression in lowering, using zero "
+                    "fallback\n";
+    DiagnosticTracker::recordFallback();
     return builder_.create<arc::ConstantOp>(
         loc, arc::I32Type::get(&mlirCtx_), builder_.getI32IntegerAttr(0));
   }
