@@ -13,6 +13,13 @@
 #include <sstream>
 
 namespace arcanum {
+namespace {
+/// Base for decimal integer parsing.
+constexpr unsigned DECIMAL_BASE = 10;
+/// Prefix strings for contract annotation lines.
+constexpr llvm::StringLiteral REQUIRES_PREFIX("requires:");
+constexpr llvm::StringLiteral ENSURES_PREFIX("ensures:");
+} // namespace
 
 ContractExprPtr ContractExpr::makeIntLiteral(int64_t val) {
   auto e = std::make_shared<ContractExpr>();
@@ -65,7 +72,7 @@ namespace {
 /// Simple recursive-descent parser for contract expressions.
 class ExprParser {
 public:
-  explicit ExprParser(llvm::StringRef text) : text_(text), pos_(0) {}
+  explicit ExprParser(llvm::StringRef text) : text(text) {}
 
   ContractExprPtr parse() {
     auto expr = parseOr();
@@ -75,16 +82,16 @@ public:
 
 private:
   void skipWhitespace() {
-    while (pos_ < text_.size() &&
-           std::isspace(static_cast<unsigned char>(text_[pos_]))) {
-      ++pos_;
+    while (pos < text.size() &&
+           (std::isspace(static_cast<unsigned char>(text[pos])) != 0)) {
+      ++pos;
     }
   }
 
   bool matchString(llvm::StringRef s) {
     skipWhitespace();
-    if (text_.substr(pos_).starts_with(s)) {
-      pos_ += s.size();
+    if (text.substr(pos).starts_with(s)) {
+      pos += s.size();
       return true;
     }
     return false;
@@ -92,12 +99,14 @@ private:
 
   ContractExprPtr parseOr() {
     auto lhs = parseAnd();
-    if (!lhs)
+    if (!lhs) {
       return nullptr;
+}
     while (matchString("||")) {
       auto rhs = parseAnd();
-      if (!rhs)
+      if (!rhs) {
         return nullptr;
+}
       lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Or, lhs, rhs);
     }
     return lhs;
@@ -105,12 +114,14 @@ private:
 
   ContractExprPtr parseAnd() {
     auto lhs = parseComparison();
-    if (!lhs)
+    if (!lhs) {
       return nullptr;
+}
     while (matchString("&&")) {
       auto rhs = parseComparison();
-      if (!rhs)
+      if (!rhs) {
         return nullptr;
+}
       lhs = ContractExpr::makeBinaryOp(BinaryOpKind::And, lhs, rhs);
     }
     return lhs;
@@ -118,43 +129,50 @@ private:
 
   ContractExprPtr parseComparison() {
     auto lhs = parseAddSub();
-    if (!lhs)
+    if (!lhs) {
       return nullptr;
+}
     skipWhitespace();
     if (matchString("<=")) {
       auto rhs = parseAddSub();
-      if (!rhs)
+      if (!rhs) {
         return nullptr;
+}
       return ContractExpr::makeBinaryOp(BinaryOpKind::Le, lhs, rhs);
     }
     if (matchString(">=")) {
       auto rhs = parseAddSub();
-      if (!rhs)
+      if (!rhs) {
         return nullptr;
+}
       return ContractExpr::makeBinaryOp(BinaryOpKind::Ge, lhs, rhs);
     }
     if (matchString("==")) {
       auto rhs = parseAddSub();
-      if (!rhs)
+      if (!rhs) {
         return nullptr;
+}
       return ContractExpr::makeBinaryOp(BinaryOpKind::Eq, lhs, rhs);
     }
     if (matchString("!=")) {
       auto rhs = parseAddSub();
-      if (!rhs)
+      if (!rhs) {
         return nullptr;
+}
       return ContractExpr::makeBinaryOp(BinaryOpKind::Ne, lhs, rhs);
     }
     if (matchString("<")) {
       auto rhs = parseAddSub();
-      if (!rhs)
+      if (!rhs) {
         return nullptr;
+}
       return ContractExpr::makeBinaryOp(BinaryOpKind::Lt, lhs, rhs);
     }
     if (matchString(">")) {
       auto rhs = parseAddSub();
-      if (!rhs)
+      if (!rhs) {
         return nullptr;
+}
       return ContractExpr::makeBinaryOp(BinaryOpKind::Gt, lhs, rhs);
     }
     return lhs;
@@ -162,19 +180,22 @@ private:
 
   ContractExprPtr parseAddSub() {
     auto lhs = parseMulDiv();
-    if (!lhs)
+    if (!lhs) {
       return nullptr;
+}
     skipWhitespace();
     while (true) {
       if (matchString("+")) {
         auto rhs = parseMulDiv();
-        if (!rhs)
+        if (!rhs) {
           return nullptr;
+}
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Add, lhs, rhs);
       } else if (matchString("-")) {
         auto rhs = parseMulDiv();
-        if (!rhs)
+        if (!rhs) {
           return nullptr;
+}
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Sub, lhs, rhs);
       } else {
         break;
@@ -185,24 +206,28 @@ private:
 
   ContractExprPtr parseMulDiv() {
     auto lhs = parseUnary();
-    if (!lhs)
+    if (!lhs) {
       return nullptr;
+}
     skipWhitespace();
     while (true) {
       if (matchString("*")) {
         auto rhs = parseUnary();
-        if (!rhs)
+        if (!rhs) {
           return nullptr;
+}
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Mul, lhs, rhs);
       } else if (matchString("/")) {
         auto rhs = parseUnary();
-        if (!rhs)
+        if (!rhs) {
           return nullptr;
+}
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Div, lhs, rhs);
       } else if (matchString("%")) {
         auto rhs = parseUnary();
-        if (!rhs)
+        if (!rhs) {
           return nullptr;
+}
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Rem, lhs, rhs);
       } else {
         break;
@@ -215,14 +240,16 @@ private:
     skipWhitespace();
     if (matchString("!")) {
       auto operand = parseUnary();
-      if (!operand)
+      if (!operand) {
         return nullptr;
+}
       return ContractExpr::makeUnaryOp(UnaryOpKind::Not, operand);
     }
     if (matchString("-")) {
       auto operand = parsePrimary();
-      if (!operand)
+      if (!operand) {
         return nullptr;
+}
       return ContractExpr::makeUnaryOp(UnaryOpKind::Neg, operand);
     }
     return parsePrimary();
@@ -230,16 +257,16 @@ private:
 
   ContractExprPtr parsePrimary() {
     skipWhitespace();
-    if (pos_ >= text_.size()) {
+    if (pos >= text.size()) {
       return nullptr; // Error: unexpected end of expression
     }
     // Parenthesized expression
-    if (text_[pos_] == '(') {
-      ++pos_;
+    if (text[pos] == '(') {
+      ++pos;
       auto expr = parseOr();
       skipWhitespace();
-      if (pos_ < text_.size() && text_[pos_] == ')') {
-        ++pos_;
+      if (pos < text.size() && text[pos] == ')') {
+        ++pos;
       }
       return expr;
     }
@@ -255,43 +282,43 @@ private:
       return ContractExpr::makeBoolLiteral(false);
     }
     // Integer literal
-    if (std::isdigit(static_cast<unsigned char>(text_[pos_]))) {
-      size_t start = pos_;
-      while (pos_ < text_.size() &&
-             std::isdigit(static_cast<unsigned char>(text_[pos_]))) {
-        ++pos_;
+    if (std::isdigit(static_cast<unsigned char>(text[pos])) != 0) {
+      size_t start = pos;
+      while (pos < text.size() &&
+             (std::isdigit(static_cast<unsigned char>(text[pos])) != 0)) {
+        ++pos;
       }
       int64_t val = 0;
-      auto sub = text_.substr(start, pos_ - start);
-      if (sub.getAsInteger(10, val)) {
+      auto sub = text.substr(start, pos - start);
+      if (sub.getAsInteger(DECIMAL_BASE, val)) {
         return nullptr; // Error: invalid integer literal
       }
       return ContractExpr::makeIntLiteral(val);
     }
     // Identifier (parameter name)
-    if (std::isalpha(static_cast<unsigned char>(text_[pos_])) ||
-        text_[pos_] == '_') {
-      size_t start = pos_;
-      while (pos_ < text_.size() &&
-             (std::isalnum(static_cast<unsigned char>(text_[pos_])) ||
-              text_[pos_] == '_')) {
-        ++pos_;
+    if ((std::isalpha(static_cast<unsigned char>(text[pos])) != 0) ||
+        text[pos] == '_') {
+      size_t start = pos;
+      while (pos < text.size() &&
+             ((std::isalnum(static_cast<unsigned char>(text[pos])) != 0) ||
+              text[pos] == '_')) {
+        ++pos;
       }
       return ContractExpr::makeParamRef(
-          text_.substr(start, pos_ - start).str());
+          text.substr(start, pos - start).str());
     }
     // Fallback: unrecognized token
     return nullptr;
   }
 
-  llvm::StringRef text_;
-  size_t pos_;
+  llvm::StringRef text;
+  size_t pos{0};
 };
 
 /// Extract //@ lines from a raw comment block and return them.
 std::vector<std::string> extractAnnotationLines(llvm::StringRef commentText) {
   std::vector<std::string> lines;
-  llvm::SmallVector<llvm::StringRef, 8> splitLines;
+  llvm::SmallVector<llvm::StringRef, 8> splitLines; // NOLINT(readability-magic-numbers)
   commentText.split(splitLines, '\n');
 
   for (auto& line : splitLines) {
@@ -319,13 +346,13 @@ parseContracts(clang::ASTContext& context) {
   // Iterate over all function declarations
   for (auto* decl : context.getTranslationUnitDecl()->decls()) {
     auto* funcDecl = llvm::dyn_cast<clang::FunctionDecl>(decl);
-    if (!funcDecl || !funcDecl->hasBody()) {
+    if ((funcDecl == nullptr) || !funcDecl->hasBody()) {
       continue;
     }
 
     // Get the raw comment associated with this declaration
     const auto* rawComment = context.getRawCommentForDeclNoCache(funcDecl);
-    if (!rawComment) {
+    if (rawComment == nullptr) {
       continue;
     }
 
@@ -339,14 +366,14 @@ parseContracts(clang::ASTContext& context) {
     ContractInfo info;
     for (const auto& line : annotationLines) {
       llvm::StringRef lineRef(line);
-      if (lineRef.starts_with("requires:")) {
-        auto exprText = lineRef.drop_front(9).trim();
+      if (lineRef.starts_with(REQUIRES_PREFIX)) {
+        auto exprText = lineRef.drop_front(REQUIRES_PREFIX.size()).trim();
         ExprParser parser(exprText);
         if (auto expr = parser.parse()) {
           info.preconditions.push_back(std::move(expr));
         }
-      } else if (lineRef.starts_with("ensures:")) {
-        auto exprText = lineRef.drop_front(8).trim();
+      } else if (lineRef.starts_with(ENSURES_PREFIX)) {
+        auto exprText = lineRef.drop_front(ENSURES_PREFIX.size()).trim();
         ExprParser parser(exprText);
         if (auto expr = parser.parse()) {
           info.postconditions.push_back(std::move(expr));

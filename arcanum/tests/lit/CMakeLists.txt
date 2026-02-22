@@ -1,38 +1,54 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-# Locate lit: prefer LLVM_EXTERNAL_LIT, then search common paths, then fallback
+# Locate lit: prefer LLVM_EXTERNAL_LIT, then search common paths, then fallback.
+# Always recompute (FORCE) so a stale cached fallback doesn't persist after the
+# environment is fixed.  Users should set LLVM_EXTERNAL_LIT to override.
 if(LLVM_EXTERNAL_LIT)
   set(_LIT_DEFAULT "${LLVM_EXTERNAL_LIT}")
 elseif(LLVM_DIR)
-  get_filename_component(_LLVM_ROOT "${LLVM_DIR}" DIRECTORY)
-  get_filename_component(_LLVM_ROOT "${_LLVM_ROOT}" DIRECTORY)
-  get_filename_component(_LLVM_ROOT "${_LLVM_ROOT}" DIRECTORY)
-  find_program(_LIT_FOUND NAMES lit llvm-lit lit.py
-      HINTS "${_LLVM_ROOT}/bin" "${_LLVM_ROOT}/build/utils/lit")
-  if(_LIT_FOUND)
-    set(_LIT_DEFAULT "${_LIT_FOUND}")
+  # LLVM_DIR layout varies:
+  #   Debian/Ubuntu: <root>/cmake          (1 level up to root)
+  #   Standard:      <root>/lib/cmake/llvm  (3 levels up to root)
+  # Try Debian layout first (1 level), then standard (3 levels).
+  get_filename_component(_LLVM_ROOT_1 "${LLVM_DIR}" DIRECTORY)
+  get_filename_component(_LLVM_ROOT_3 "${_LLVM_ROOT_1}" DIRECTORY)
+  get_filename_component(_LLVM_ROOT_3 "${_LLVM_ROOT_3}" DIRECTORY)
+  find_program(_LIT_VIA_LLVM NAMES lit llvm-lit lit.py
+      HINTS "${_LLVM_ROOT_1}/bin" "${_LLVM_ROOT_1}/build/utils/lit"
+            "${_LLVM_ROOT_3}/bin" "${_LLVM_ROOT_3}/build/utils/lit")
+  if(_LIT_VIA_LLVM)
+    set(_LIT_DEFAULT "${_LIT_VIA_LLVM}")
   endif()
 endif()
 if(NOT _LIT_DEFAULT)
-  find_program(_LIT_FOUND NAMES lit llvm-lit lit.py
+  find_program(_LIT_VIA_SYSTEM NAMES lit llvm-lit lit.py
       HINTS "/usr/lib/llvm-21/build/utils/lit" "/usr/lib/llvm-21/bin")
-  if(_LIT_FOUND)
-    set(_LIT_DEFAULT "${_LIT_FOUND}")
+  if(_LIT_VIA_SYSTEM)
+    set(_LIT_DEFAULT "${_LIT_VIA_SYSTEM}")
   else()
     set(_LIT_DEFAULT "${Python3_EXECUTABLE}" "-m" "lit")
   endif()
 endif()
-set(LIT_COMMAND ${_LIT_DEFAULT} CACHE STRING "Command to run lit")
+set(LIT_COMMAND ${_LIT_DEFAULT} CACHE STRING "Command to run lit" FORCE)
 
-# Locate LLVM tools directory
+# Locate LLVM tools directory (handles both Debian and standard layouts)
 if(LLVM_TOOLS_BINARY_DIR)
   set(_TOOLS_DEFAULT "${LLVM_TOOLS_BINARY_DIR}")
 elseif(LLVM_DIR)
-  get_filename_component(_TOOLS_DEFAULT "${LLVM_DIR}/../../../bin" ABSOLUTE)
+  # Try Debian layout first (1 level up), then standard (3 levels up)
+  get_filename_component(_TOOLS_ROOT_1 "${LLVM_DIR}/.." ABSOLUTE)
+  get_filename_component(_TOOLS_ROOT_3 "${LLVM_DIR}/../../.." ABSOLUTE)
+  if(EXISTS "${_TOOLS_ROOT_1}/bin/FileCheck")
+    set(_TOOLS_DEFAULT "${_TOOLS_ROOT_1}/bin")
+  elseif(EXISTS "${_TOOLS_ROOT_3}/bin/FileCheck")
+    set(_TOOLS_DEFAULT "${_TOOLS_ROOT_3}/bin")
+  else()
+    set(_TOOLS_DEFAULT "/usr/lib/llvm-21/bin")
+  endif()
 else()
   set(_TOOLS_DEFAULT "/usr/lib/llvm-21/bin")
 endif()
-set(LLVM_TOOLS_DIR "${_TOOLS_DEFAULT}" CACHE PATH "Path to LLVM tools")
+set(LLVM_TOOLS_DIR "${_TOOLS_DEFAULT}" CACHE PATH "Path to LLVM tools" FORCE)
 set(FILECHECK_PATH "${LLVM_TOOLS_DIR}/FileCheck" CACHE FILEPATH "Path to FileCheck")
 set(NOT_PATH "${LLVM_TOOLS_DIR}/not" CACHE FILEPATH "Path to not tool")
 

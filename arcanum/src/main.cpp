@@ -35,7 +35,8 @@ static cl::opt<std::string> why3Path("why3-path",
 
 static cl::opt<int> timeout("timeout",
                             cl::desc("Per-obligation timeout in seconds"),
-                            cl::init(30), cl::cat(arcanumCategory));
+                            cl::init(arcanum::DEFAULT_TIMEOUT_SECONDS),
+                            cl::cat(arcanumCategory));
 
 int main(int argc, const char** argv) {
   auto expectedParser =
@@ -124,7 +125,8 @@ int main(int argc, const char** argv) {
   auto obligations = arcanum::runWhy3(whymlResult->filePath, why3Path, timeout);
 
   // Clean up the temporary .mlw file created by the WhyML emitter.
-  llvm::sys::fs::remove(whymlResult->filePath);
+  auto removeEc = llvm::sys::fs::remove(whymlResult->filePath);
+  (void)removeEc;
 
   // Stage 8: Report Generator
   auto report = arcanum::generateReport(obligations, whymlResult->locationMap);

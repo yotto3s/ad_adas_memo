@@ -5,11 +5,18 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <array>
 #include <charconv>
 #include <regex>
 #include <sstream>
 
 namespace arcanum {
+namespace {
+/// Regex capture group index for the duration/detail field in Why3 output.
+constexpr size_t DETAIL_GROUP_INDEX = 3;
+/// Conversion factor from seconds to milliseconds.
+constexpr int MS_PER_SECOND = 1000;
+} // namespace
 
 std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
   std::vector<ObligationResult> results;
@@ -40,10 +47,10 @@ std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
       }
 
       // Parse duration if present (e.g., "0.01s, 0 steps")
-      if (match.size() > 3 && match[3].matched) {
+      if (match.size() > DETAIL_GROUP_INDEX && match[DETAIL_GROUP_INDEX].matched) {
         std::regex durationRegex(R"(([\d.]+)s)");
         std::smatch durMatch;
-        auto detailStr = match[3].str();
+        auto detailStr = match[DETAIL_GROUP_INDEX].str();
         if (std::regex_search(detailStr, durMatch, durationRegex)) {
           auto durStr = durMatch[1].str();
           double seconds = 0.0;
@@ -52,7 +59,7 @@ std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
           (void)ptr;
           if (ec == std::errc{}) {
             result.duration =
-                std::chrono::milliseconds(static_cast<int>(seconds * 1000));
+                std::chrono::milliseconds(static_cast<int>(seconds * MS_PER_SECOND));
           }
         }
       }
@@ -87,7 +94,7 @@ std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
   args.push_back(mlwPath);
 
   // Create temp file to capture stdout+stderr
-  llvm::SmallString<128> outputPath;
+  llvm::SmallString<128> outputPath; // NOLINT(readability-magic-numbers)
   std::error_code ec =
       llvm::sys::fs::createTemporaryFile("why3out", "txt", outputPath);
   if (ec) {
@@ -97,7 +104,7 @@ std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
     return {err};
   }
 
-  std::optional<llvm::StringRef> redirects[] = {
+  std::array<std::optional<llvm::StringRef>, 3> redirects = { // NOLINT(readability-magic-numbers)
       std::nullopt,                // stdin
       llvm::StringRef(outputPath), // stdout
       llvm::StringRef(outputPath), // stderr -> same file
@@ -113,7 +120,8 @@ std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
   if (bufOrErr) {
     output = (*bufOrErr)->getBuffer().str();
   }
-  llvm::sys::fs::remove(outputPath);
+  auto removeEc = llvm::sys::fs::remove(outputPath);
+  (void)removeEc;
 
   return parseWhy3Output(output);
 }

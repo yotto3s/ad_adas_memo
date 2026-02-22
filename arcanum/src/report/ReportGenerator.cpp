@@ -33,14 +33,15 @@ Report generateReport(const std::vector<ObligationResult>& obligations,
 
   std::ostringstream out;
 
-  double totalSeconds = static_cast<double>(totalDuration.count()) / 1000.0;
+  constexpr double MS_PER_SECOND = 1000.0;
+  double totalSeconds = static_cast<double>(totalDuration.count()) / MS_PER_SECOND;
 
   // Per-function report line
   if (totalCount > 0) {
     // Try to get the first function from the location map
     std::string funcLine;
     if (!locationMap.empty()) {
-      auto& entry = locationMap.begin()->second;
+      const auto& entry = locationMap.begin()->second;
       funcLine = entry.fileName + ":" + entry.functionName;
     } else {
       funcLine = "unknown";

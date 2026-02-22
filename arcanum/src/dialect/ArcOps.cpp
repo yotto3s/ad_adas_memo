@@ -22,15 +22,17 @@ void printBinaryOp(mlir::OpAsmPrinter& printer, mlir::Operation* op) {
 
 mlir::ParseResult parseBinaryOp(mlir::OpAsmParser& parser,
                                 mlir::OperationState& result) {
-  mlir::OpAsmParser::UnresolvedOperand lhs, rhs;
+  mlir::OpAsmParser::UnresolvedOperand lhs;
+  mlir::OpAsmParser::UnresolvedOperand rhs;
   mlir::Type type;
   if (parser.parseOperand(lhs) || parser.parseComma() ||
       parser.parseOperand(rhs) ||
       parser.parseOptionalAttrDict(result.attributes) ||
       parser.parseColonType(type) ||
       parser.resolveOperand(lhs, type, result.operands) ||
-      parser.resolveOperand(rhs, type, result.operands))
+      parser.resolveOperand(rhs, type, result.operands)) {
     return mlir::failure();
+}
   result.addTypes(type);
   return mlir::success();
 }
@@ -45,13 +47,16 @@ mlir::ParseResult FuncOp::parse(mlir::OpAsmParser& parser,
                                 mlir::OperationState& result) {
   // Parse: arc.func @name { <optional attrs> } <region>
   mlir::StringAttr nameAttr;
-  if (parser.parseSymbolName(nameAttr, "sym_name", result.attributes))
+  if (parser.parseSymbolName(nameAttr, "sym_name", result.attributes)) {
     return mlir::failure();
-  if (parser.parseOptionalAttrDict(result.attributes))
+}
+  if (parser.parseOptionalAttrDict(result.attributes)) {
     return mlir::failure();
+}
   auto* body = result.addRegion();
-  if (parser.parseRegion(*body))
+  if (parser.parseRegion(*body)) {
     return mlir::failure();
+}
   // function_type is required; if absent from the parsed attrs, this will
   // fail MLIR verification, which is acceptable for round-trip testing.
   return mlir::success();
@@ -75,8 +80,9 @@ mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser& parser,
   mlir::Attribute valueAttr;
   mlir::Type type;
   if (parser.parseAttribute(valueAttr, "value", result.attributes) ||
-      parser.parseColonType(type))
+      parser.parseColonType(type)) {
     return mlir::failure();
+}
   result.addTypes(type);
   return mlir::success();
 }
@@ -151,8 +157,9 @@ mlir::ParseResult NotOp::parse(mlir::OpAsmParser& parser,
   if (parser.parseOperand(operand) ||
       parser.parseOptionalAttrDict(result.attributes) ||
       parser.parseColonType(type) ||
-      parser.resolveOperand(operand, type, result.operands))
+      parser.resolveOperand(operand, type, result.operands)) {
     return mlir::failure();
+}
   result.addTypes(type);
   return mlir::success();
 }
@@ -203,8 +210,9 @@ mlir::ParseResult ReturnOp::parse(mlir::OpAsmParser& parser,
   mlir::Type type;
   if (parser.parseOptionalOperand(operand).has_value()) {
     if (parser.parseColonType(type) ||
-        parser.resolveOperand(operand, type, result.operands))
+        parser.resolveOperand(operand, type, result.operands)) {
       return mlir::failure();
+}
   }
   return parser.parseOptionalAttrDict(result.attributes);
 }

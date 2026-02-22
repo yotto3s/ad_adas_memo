@@ -7,6 +7,9 @@
 
 namespace arcanum {
 
+/// Default per-obligation timeout in seconds for Why3 solver invocations.
+constexpr int DEFAULT_TIMEOUT_SECONDS = 30;
+
 enum class ObligationStatus {
   Valid,
   Unknown,
@@ -29,7 +32,7 @@ struct ObligationResult {
 /// Returns per-obligation results parsed from Why3 stdout.
 std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
                                       const std::string& why3Binary = "why3",
-                                      int timeoutSeconds = 30);
+                                      int timeoutSeconds = DEFAULT_TIMEOUT_SECONDS);
 
 /// Parse Why3 stdout output into obligation results (exposed for testing).
 std::vector<ObligationResult> parseWhy3Output(const std::string& output);

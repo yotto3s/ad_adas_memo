@@ -13,6 +13,9 @@
 namespace arcanum {
 namespace {
 
+/// Token string for \result in contract expressions.
+constexpr llvm::StringLiteral RESULT_TOKEN("\\result");
+
 /// Convert a contract expression string from Arc format to WhyML format.
 /// Transforms: \result -> result, && -> /\, || -> \/, etc.
 ///
@@ -25,9 +28,9 @@ std::string contractToWhyML(llvm::StringRef contract) {
   std::string result;
   size_t i = 0;
   while (i < contract.size()) {
-    if (contract.substr(i).starts_with("\\result")) {
+    if (contract.substr(i).starts_with(RESULT_TOKEN)) {
       result += "result";
-      i += 7;
+      i += RESULT_TOKEN.size();
     } else if (contract.substr(i).starts_with("&&")) {
       result += "/\\";
       i += 2;
@@ -111,19 +114,19 @@ llvm::SmallVector<std::string> getParamNames(arc::FuncOp funcOp) {
 
 class WhyMLWriter {
 public:
-  explicit WhyMLWriter(mlir::ModuleOp module) : module_(module) {}
+  explicit WhyMLWriter(mlir::ModuleOp module) : module(module) {}
 
   std::optional<WhyMLResult> emit() {
     WhyMLResult result;
 
-    module_.walk([&](arc::FuncOp funcOp) { emitFunction(funcOp, result); });
+    module.walk([&](arc::FuncOp funcOp) { emitFunction(funcOp, result); });
 
     if (result.whymlText.empty()) {
       return std::nullopt;
     }
 
     // Write to temp file
-    llvm::SmallString<128> tmpPath;
+    llvm::SmallString<128> tmpPath; // NOLINT(readability-magic-numbers)
     std::error_code ec;
     ec = llvm::sys::fs::createTemporaryFile("arcanum", "mlw", tmpPath);
     if (ec) {
@@ -163,17 +166,20 @@ private:
     bool needsBool = false;
     auto& entryBlock = funcOp.getBody().front();
     for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
-      if (mlir::isa<arc::BoolType>(entryBlock.getArgument(i).getType()))
+      if (mlir::isa<arc::BoolType>(entryBlock.getArgument(i).getType())) {
         needsBool = true;
+}
     }
     if (funcType.getNumResults() > 0 &&
-        mlir::isa<arc::BoolType>(funcType.getResult(0)))
+        mlir::isa<arc::BoolType>(funcType.getResult(0))) {
       needsBool = true;
+}
 
     out << "module " << moduleName << "\n";
     out << "  use int.Int\n";
-    if (needsBool)
+    if (needsBool) {
       out << "  use bool.Bool\n";
+}
     out << "\n";
 
     // Function signature
@@ -190,8 +196,9 @@ private:
 
     // Result type
     std::string resultType = "int";
-    if (funcType.getNumResults() > 0)
+    if (funcType.getNumResults() > 0) {
       resultType = toWhyMLType(funcType.getResult(0));
+}
     out << ": " << resultType << "\n";
 
     // Requires clauses
@@ -299,19 +306,19 @@ private:
       auto rhs = getExpr(cmpOp.getRhs(), nameMap);
       auto pred = cmpOp.getPredicate().str();
       std::string whymlOp;
-      if (pred == "lt")
+      if (pred == "lt") {
         whymlOp = "<";
-      else if (pred == "le")
+      } else if (pred == "le") {
         whymlOp = "<=";
-      else if (pred == "gt")
+      } else if (pred == "gt") {
         whymlOp = ">";
-      else if (pred == "ge")
+      } else if (pred == "ge") {
         whymlOp = ">=";
-      else if (pred == "eq")
+      } else if (pred == "eq") {
         whymlOp = "=";
-      else if (pred == "ne")
+      } else if (pred == "ne") {
         whymlOp = "<>";
-      else {
+      } else {
         llvm::errs() << "warning: unknown comparison predicate '" << pred
                      << "', defaulting to '='\n";
         whymlOp = "=";
@@ -367,7 +374,7 @@ private:
     return "?unknown?";
   }
 
-  mlir::ModuleOp module_;
+  mlir::ModuleOp module;
 };
 
 } // namespace

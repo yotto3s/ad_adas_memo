@@ -9,15 +9,19 @@
 #include "clang/AST/Type.h"
 #include "clang/Basic/SourceManager.h"
 
+#include <algorithm>
 #include <string>
 
 namespace arcanum {
 namespace {
 
+/// Bit width of int32_t, used for type-width checks.
+constexpr uint64_t INT32_BIT_WIDTH = 32;
+
 class SubsetVisitor : public clang::RecursiveASTVisitor<SubsetVisitor> {
 public:
   explicit SubsetVisitor(clang::ASTContext& ctx, SubsetResult& result)
-      : ctx_(ctx), result_(result) {}
+      : ctx(ctx), result(result) {}
 
   bool VisitFunctionDecl(clang::FunctionDecl* decl) {
     if (!decl->hasBody()) {
@@ -34,7 +38,7 @@ public:
     if (auto* dc = decl->getDeclContext()) {
       if (!dc->isTranslationUnit()) {
         bool isSystemHeader =
-            ctx_.getSourceManager().isInSystemHeader(decl->getLocation());
+            ctx.getSourceManager().isInSystemHeader(decl->getLocation());
         // Allow methods (caught by virtual/class checks) and system headers
         if (!llvm::isa<clang::CXXMethodDecl>(decl) && !isSystemHeader) {
           addDiagnostic(
@@ -121,15 +125,16 @@ public:
 private:
   /// Check whether a statement (or any nested statement) contains a return.
   bool containsReturn(const clang::Stmt* stmt) {
-    if (!stmt)
+    if (stmt == nullptr) {
       return false;
-    if (llvm::isa<clang::ReturnStmt>(stmt))
+}
+    if (llvm::isa<clang::ReturnStmt>(stmt)) {
       return true;
-    for (const auto* child : stmt->children()) {
-      if (containsReturn(child))
-        return true;
-    }
-    return false;
+}
+    return std::any_of(stmt->child_begin(), stmt->child_end(),
+                       [this](const clang::Stmt* child) {
+                         return containsReturn(child);
+                       });
   }
 
   /// Check for early returns: a return is "early" if it can cause the
@@ -137,10 +142,11 @@ private:
   /// Returns inside terminal if/else branches (where both branches return)
   /// are fine because they represent structured single-exit.
   bool hasEarlyReturn(const clang::Stmt* stmt) {
-    if (!stmt)
+    if (stmt == nullptr) {
       return false;
+}
     if (const auto* compound = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
-      for (auto it = compound->body_begin(); it != compound->body_end(); ++it) {
+      for (const auto *it = compound->body_begin(); it != compound->body_end(); ++it) {
         bool isLast = (std::next(it) == compound->body_end());
         // A bare return statement followed by more statements
         if (llvm::isa<clang::ReturnStmt>(*it) && !isLast) {
@@ -150,7 +156,7 @@ private:
         // statements -- this is the "guard clause" / early return pattern.
         if (!isLast) {
           if (const auto* ifStmt = llvm::dyn_cast<clang::IfStmt>(*it)) {
-            if (!ifStmt->getElse() && containsReturn(ifStmt->getThen())) {
+            if ((ifStmt->getElse() == nullptr) && containsReturn(ifStmt->getThen())) {
               return true;
             }
           }
@@ -161,16 +167,18 @@ private:
       }
     } else {
       for (const auto* child : stmt->children()) {
-        if (hasEarlyReturn(child))
+        if (hasEarlyReturn(child)) {
           return true;
+}
       }
     }
     return false;
   }
 
   bool callsSelf(const clang::FunctionDecl* funcDecl, const clang::Stmt* stmt) {
-    if (!stmt)
+    if (stmt == nullptr) {
       return false;
+}
     if (const auto* call = llvm::dyn_cast<clang::CallExpr>(stmt)) {
       if (const auto* callee = call->getDirectCallee()) {
         if (callee->getCanonicalDecl() == funcDecl->getCanonicalDecl()) {
@@ -178,11 +186,10 @@ private:
         }
       }
     }
-    for (const auto* child : stmt->children()) {
-      if (callsSelf(funcDecl, child))
-        return true;
-    }
-    return false;
+    return std::any_of(stmt->child_begin(), stmt->child_end(),
+                       [this, funcDecl](const clang::Stmt* child) {
+                         return callsSelf(funcDecl, child);
+                       });
   }
 
   void checkType(clang::QualType type, clang::SourceLocation loc) {
@@ -205,8 +212,8 @@ private:
     }
     // Check for typedef to int32_t specifically
     if (type->isIntegerType()) {
-      auto width = ctx_.getTypeSize(type);
-      if (width == 32 && type->isSignedIntegerType()) {
+      auto width = ctx.getTypeSize(type);
+      if (width == INT32_BIT_WIDTH && type->isSignedIntegerType()) {
         return;
       }
     }
@@ -223,22 +230,22 @@ private:
   }
 
   void addDiagnostic(clang::SourceLocation loc, const std::string& msg) {
-    result_.passed = false;
-    auto& sm = ctx_.getSourceManager();
+    result.passed = false;
+    auto& sm = ctx.getSourceManager();
     if (loc.isValid()) {
       auto presumed = sm.getPresumedLoc(loc);
       if (presumed.isValid()) {
-        result_.diagnostics.push_back(std::string(presumed.getFilename()) +
+        result.diagnostics.push_back(std::string(presumed.getFilename()) +
                                       ":" + std::to_string(presumed.getLine()) +
                                       ": error: " + msg);
         return;
       }
     }
-    result_.diagnostics.push_back("error: " + msg);
+    result.diagnostics.push_back("error: " + msg);
   }
 
-  clang::ASTContext& ctx_;
-  SubsetResult& result_;
+  clang::ASTContext& ctx;
+  SubsetResult& result;
 };
 
 } // namespace
