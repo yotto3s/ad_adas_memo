@@ -23,6 +23,8 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     opam \
     z3 \
+    libgmp-dev \
+    pkg-config \
     && apt-get clean
 
 # Install LLVM 21 via llvm.sh
@@ -50,7 +52,7 @@ RUN update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 100 \
 # Install Why3 via opam
 RUN opam init --disable-sandboxing --yes && \
     eval $(opam env) && \
-    opam install why3 --yes && \
+    opam install why3 --yes --assume-depexts && \
     cp $(opam var bin)/why3 /usr/local/bin/why3
 
 # Configure Why3 to use Z3
