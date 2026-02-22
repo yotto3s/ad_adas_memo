@@ -7,7 +7,6 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <variant>
 #include <vector>
 
 namespace arcanum {
@@ -66,8 +65,8 @@ struct ContractExpr {
 };
 
 struct ContractInfo {
-  std::vector<ContractExprPtr> requires;
-  std::vector<ContractExprPtr> ensures;
+  std::vector<ContractExprPtr> preconditions;
+  std::vector<ContractExprPtr> postconditions;
 };
 
 /// Parse //@ requires: and //@ ensures: annotations from raw comments,

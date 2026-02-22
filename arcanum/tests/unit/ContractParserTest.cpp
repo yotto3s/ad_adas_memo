@@ -29,8 +29,8 @@ TEST(ContractParserTest, ParsesSimpleRequires) {
 
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
-  EXPECT_EQ(it->second.requires.size(), 1u);
-  EXPECT_EQ(it->second.ensures.size(), 0u);
+  EXPECT_EQ(it->second.preconditions.size(), 1u);
+  EXPECT_EQ(it->second.postconditions.size(), 0u);
 }
 
 TEST(ContractParserTest, ParsesMultipleRequires) {
@@ -44,7 +44,7 @@ TEST(ContractParserTest, ParsesMultipleRequires) {
 
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
-  EXPECT_EQ(it->second.requires.size(), 2u);
+  EXPECT_EQ(it->second.preconditions.size(), 2u);
 }
 
 TEST(ContractParserTest, ParsesEnsuresWithResult) {
@@ -57,7 +57,7 @@ TEST(ContractParserTest, ParsesEnsuresWithResult) {
 
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
-  EXPECT_EQ(it->second.ensures.size(), 1u);
+  EXPECT_EQ(it->second.postconditions.size(), 1u);
 }
 
 TEST(ContractParserTest, ParsesRequiresAndEnsures) {
@@ -72,8 +72,8 @@ TEST(ContractParserTest, ParsesRequiresAndEnsures) {
 
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
-  EXPECT_EQ(it->second.requires.size(), 2u);
-  EXPECT_EQ(it->second.ensures.size(), 1u);
+  EXPECT_EQ(it->second.preconditions.size(), 2u);
+  EXPECT_EQ(it->second.postconditions.size(), 1u);
 }
 
 TEST(ContractParserTest, NoContractsReturnsEmptyMap) {
@@ -95,8 +95,8 @@ TEST(ContractParserTest, ParsesBinaryComparisonExpr) {
   )", ast);
 
   auto it = contracts.begin();
-  ASSERT_EQ(it->second.requires.size(), 1u);
-  auto& expr = it->second.requires[0];
+  ASSERT_EQ(it->second.preconditions.size(), 1u);
+  auto& expr = it->second.preconditions[0];
   EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
   EXPECT_EQ(expr->binaryOp, BinaryOpKind::Ge);
   EXPECT_EQ(expr->left->kind, ContractExprKind::ParamRef);
@@ -114,8 +114,8 @@ TEST(ContractParserTest, ParsesAndExpression) {
   )", ast);
 
   auto it = contracts.begin();
-  ASSERT_EQ(it->second.requires.size(), 1u);
-  auto& expr = it->second.requires[0];
+  ASSERT_EQ(it->second.preconditions.size(), 1u);
+  auto& expr = it->second.preconditions[0];
   EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
   EXPECT_EQ(expr->binaryOp, BinaryOpKind::And);
 }
@@ -129,8 +129,8 @@ TEST(ContractParserTest, ParsesResultRef) {
   )", ast);
 
   auto it = contracts.begin();
-  ASSERT_EQ(it->second.ensures.size(), 1u);
-  auto& expr = it->second.ensures[0];
+  ASSERT_EQ(it->second.postconditions.size(), 1u);
+  auto& expr = it->second.postconditions[0];
   EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
   EXPECT_EQ(expr->left->kind, ContractExprKind::ResultRef);
 }

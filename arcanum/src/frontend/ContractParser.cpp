@@ -90,11 +90,6 @@ private:
     return false;
   }
 
-  bool peekString(llvm::StringRef s) {
-    skipWhitespace();
-    return text_.substr(pos_).starts_with(s);
-  }
-
   ContractExprPtr parseOr() {
     auto lhs = parseAnd();
     while (matchString("||")) {
@@ -301,18 +296,18 @@ parseContracts(clang::ASTContext& context) {
         auto exprText = lineRef.drop_front(9).trim();
         ExprParser parser(exprText);
         if (auto expr = parser.parse()) {
-          info.requires.push_back(std::move(expr));
+          info.preconditions.push_back(std::move(expr));
         }
       } else if (lineRef.starts_with("ensures:")) {
         auto exprText = lineRef.drop_front(8).trim();
         ExprParser parser(exprText);
         if (auto expr = parser.parse()) {
-          info.ensures.push_back(std::move(expr));
+          info.postconditions.push_back(std::move(expr));
         }
       }
     }
 
-    if (!info.requires.empty() || !info.ensures.empty()) {
+    if (!info.preconditions.empty() || !info.postconditions.empty()) {
       result[funcDecl] = std::move(info);
     }
   }
