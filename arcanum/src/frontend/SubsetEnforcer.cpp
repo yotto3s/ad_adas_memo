@@ -1,227 +1,153 @@
-#include "SubsetEnforcer.h"
+#include "frontend/SubsetEnforcer.h"
 
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/Stmt.h"
-#include "clang/AST/StmtCXX.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/SourceManager.h"
 
-#include <algorithm>
+#include <string>
 
 namespace arcanum {
+namespace {
 
-// --- SubsetEnforcerResult ---
+class SubsetVisitor : public clang::RecursiveASTVisitor<SubsetVisitor> {
+public:
+  explicit SubsetVisitor(clang::ASTContext& ctx, SubsetResult& result)
+      : ctx_(ctx), result_(result) {}
 
-std::size_t SubsetEnforcerResult::errorCount() const {
-    return static_cast<std::size_t>(std::count_if(
-        violations.begin(), violations.end(), [](const SubsetViolation &v) {
-            return v.severity == ViolationSeverity::Error;
-        }));
-}
-
-// --- SubsetEnforcer ---
-
-SubsetEnforcer::SubsetEnforcer(clang::ASTContext &context)
-    : context_(context) {}
-
-SubsetEnforcerResult SubsetEnforcer::enforce() {
-    violations_.clear();
-    TraverseDecl(context_.getTranslationUnitDecl());
-    return SubsetEnforcerResult{std::move(violations_)};
-}
-
-bool SubsetEnforcer::VisitCXXMethodDecl(clang::CXXMethodDecl *decl) {
-    if (!isInMainFile(decl->getLocation()))
+  bool VisitFunctionDecl(clang::FunctionDecl* decl) {
+    if (!decl->hasBody()) {
+      return true; // Skip declarations without bodies
+    }
+    // Skip compiler-generated functions
+    if (decl->isImplicit()) {
+      return true;
+    }
+    // Reject virtual functions
+    if (auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(decl)) {
+      if (method->isVirtual()) {
+        addDiagnostic(decl->getLocation(), "virtual functions are not allowed");
         return true;
-
-    if (decl->isVirtual()) {
-        addError(decl->getLocation(),
-                 "virtual function not allowed in safe C++ subset",
-                 "use template or std::variant for dispatch");
+      }
+    }
+    // Reject templates
+    if (decl->isTemplated()) {
+      addDiagnostic(decl->getLocation(),
+                    "template functions are not allowed in Slice 1");
+      return true;
+    }
+    // Check return type
+    checkType(decl->getReturnType(), decl->getLocation());
+    // Check parameter types
+    for (const auto* param : decl->parameters()) {
+      checkType(param->getType(), param->getLocation());
     }
     return true;
-}
+  }
 
-bool SubsetEnforcer::VisitCXXThrowExpr(clang::CXXThrowExpr *expr) {
-    if (!isInMainFile(expr->getThrowLoc()))
-        return true;
-
-    addError(expr->getThrowLoc(),
-             "throw expression not allowed in safe C++ subset",
-             "use std::expected<T, E> for error handling");
-    return true;
-}
-
-bool SubsetEnforcer::VisitCXXTryStmt(clang::CXXTryStmt *stmt) {
-    if (!isInMainFile(stmt->getTryLoc()))
-        return true;
-
-    addError(stmt->getTryLoc(),
-             "try/catch not allowed in safe C++ subset",
-             "use std::expected<T, E> for error handling");
-    return true;
-}
-
-bool SubsetEnforcer::VisitCXXNewExpr(clang::CXXNewExpr *expr) {
-    if (!isInMainFile(expr->getBeginLoc()))
-        return true;
-
-    addError(expr->getBeginLoc(),
-             "new expression not allowed in safe C++ subset",
-             "use stack allocation, std::array, or arena allocators");
-    return true;
-}
-
-bool SubsetEnforcer::VisitCXXDeleteExpr(clang::CXXDeleteExpr *expr) {
-    if (!isInMainFile(expr->getBeginLoc()))
-        return true;
-
-    addError(expr->getBeginLoc(),
-             "delete expression not allowed in safe C++ subset",
-             "use stack allocation, std::array, or arena allocators");
-    return true;
-}
-
-bool SubsetEnforcer::VisitGotoStmt(clang::GotoStmt *stmt) {
-    if (!isInMainFile(stmt->getGotoLoc()))
-        return true;
-
-    addError(stmt->getGotoLoc(),
-             "goto not allowed in safe C++ subset",
-             "use structured control flow (if, for, while, break, continue)");
-    return true;
-}
-
-bool SubsetEnforcer::VisitCXXReinterpretCastExpr(
-    clang::CXXReinterpretCastExpr *expr) {
-    if (!isInMainFile(expr->getBeginLoc()))
-        return true;
-
-    addError(expr->getBeginLoc(),
-             "reinterpret_cast not allowed in safe C++ subset",
-             "use std::bit_cast<T> for type-safe reinterpretation");
-    return true;
-}
-
-bool SubsetEnforcer::VisitCXXDynamicCastExpr(
-    clang::CXXDynamicCastExpr *expr) {
-    if (!isInMainFile(expr->getBeginLoc()))
-        return true;
-
-    addError(expr->getBeginLoc(),
-             "dynamic_cast not allowed in safe C++ subset",
-             "use std::variant with std::visit for type-safe dispatch");
-    return true;
-}
-
-bool SubsetEnforcer::VisitCStyleCastExpr(clang::CStyleCastExpr *expr) {
-    if (!isInMainFile(expr->getBeginLoc()))
-        return true;
-
-    // Allow implicit casts that Clang wraps in CStyleCastExpr internally.
-    // Only reject explicit C-style casts written by the user.
-    if (expr->getCastKind() == clang::CK_NoOp)
-        return true;
-
-    addError(expr->getLParenLoc(),
-             "C-style cast not allowed in safe C++ subset",
-             "use static_cast<T> for explicit conversions");
-    return true;
-}
-
-bool SubsetEnforcer::VisitVarDecl(clang::VarDecl *decl) {
-    if (!isInMainFile(decl->getLocation()))
-        return true;
-
-    // Skip ParmVarDecl -- handled separately.
-    if (llvm::isa<clang::ParmVarDecl>(decl))
-        return true;
-
-    if (isRawPointerType(decl->getType())) {
-        addError(decl->getLocation(),
-                 "raw pointer variable not allowed in safe C++ subset",
-                 "use references, std::span, or std::array");
+  bool VisitVarDecl(clang::VarDecl* decl) {
+    if (decl->isImplicit()) {
+      return true;
     }
+    checkType(decl->getType(), decl->getLocation());
     return true;
-}
+  }
 
-bool SubsetEnforcer::VisitParmVarDecl(clang::ParmVarDecl *decl) {
-    if (!isInMainFile(decl->getLocation()))
-        return true;
+  bool VisitCXXNewExpr(clang::CXXNewExpr* expr) {
+    addDiagnostic(expr->getBeginLoc(),
+                  "dynamic allocation (new) is not allowed");
+    return true;
+  }
 
-    if (isRawPointerType(decl->getType())) {
-        addError(decl->getLocation(),
-                 "raw pointer parameter not allowed in safe C++ subset",
-                 "use references, std::span<T>, or std::array reference");
+  bool VisitCXXDeleteExpr(clang::CXXDeleteExpr* expr) {
+    addDiagnostic(expr->getBeginLoc(),
+                  "dynamic deallocation (delete) is not allowed");
+    return true;
+  }
+
+  bool VisitCXXThrowExpr(clang::CXXThrowExpr* expr) {
+    addDiagnostic(expr->getBeginLoc(), "throw expressions are not allowed");
+    return true;
+  }
+
+  bool VisitCXXTryStmt(clang::CXXTryStmt* stmt) {
+    addDiagnostic(stmt->getBeginLoc(), "try/catch is not allowed");
+    return true;
+  }
+
+  bool VisitGotoStmt(clang::GotoStmt* stmt) {
+    addDiagnostic(stmt->getBeginLoc(), "goto is not allowed");
+    return true;
+  }
+
+private:
+  void checkType(clang::QualType type, clang::SourceLocation loc) {
+    type = type.getCanonicalType();
+    // Allow void (for functions returning void, though Slice 1 expects
+    // int32_t/bool)
+    if (type->isVoidType()) {
+      return;
     }
-    return true;
-}
-
-bool SubsetEnforcer::VisitGCCAsmStmt(clang::GCCAsmStmt *stmt) {
-    if (!isInMainFile(stmt->getAsmLoc()))
-        return true;
-
-    addError(stmt->getAsmLoc(),
-             "inline assembly not allowed in safe C++ subset",
-             "use //@ trusted functions for hardware access");
-    return true;
-}
-
-bool SubsetEnforcer::VisitMSAsmStmt(clang::MSAsmStmt *stmt) {
-    if (!isInMainFile(stmt->getAsmLoc()))
-        return true;
-
-    addError(stmt->getAsmLoc(),
-             "inline assembly not allowed in safe C++ subset",
-             "use //@ trusted functions for hardware access");
-    return true;
-}
-
-bool SubsetEnforcer::VisitCallExpr(clang::CallExpr *expr) {
-    if (!isInMainFile(expr->getBeginLoc()))
-        return true;
-
-    if (auto *callee = expr->getDirectCallee()) {
-        llvm::StringRef name = callee->getName();
-        if (name == "setjmp" || name == "longjmp" || name == "_setjmp" ||
-            name == "_longjmp") {
-            addError(expr->getBeginLoc(),
-                     "setjmp/longjmp not allowed in safe C++ subset",
-                     "use structured control flow");
-        }
+    // Allow bool
+    if (type->isBooleanType()) {
+      return;
     }
-    return true;
-}
+    // Allow int32_t (which is a typedef for int on most platforms, but check
+    // for 32-bit signed integer)
+    if (const auto* bt = type->getAs<clang::BuiltinType>()) {
+      if (bt->getKind() == clang::BuiltinType::Int) {
+        return; // int32_t maps to int on most platforms
+      }
+    }
+    // Check for typedef to int32_t specifically
+    if (type->isIntegerType()) {
+      auto width = ctx_.getTypeSize(type);
+      if (width == 32 && type->isSignedIntegerType()) {
+        return;
+      }
+    }
+    // Reject everything else
+    if (type->isPointerType()) {
+      addDiagnostic(loc, "raw pointer types are not allowed");
+    } else if (type->isFloatingType()) {
+      addDiagnostic(loc, "floating-point types are not allowed in Slice 1");
+    } else {
+      addDiagnostic(loc,
+                    "type '" + type.getAsString() +
+                        "' is not allowed in Slice 1 (only int32_t and bool)");
+    }
+  }
 
-// --- Private helpers ---
+  void addDiagnostic(clang::SourceLocation loc, const std::string& msg) {
+    result_.passed = false;
+    auto& sm = ctx_.getSourceManager();
+    if (loc.isValid()) {
+      auto presumed = sm.getPresumedLoc(loc);
+      if (presumed.isValid()) {
+        result_.diagnostics.push_back(
+            std::string(presumed.getFilename()) + ":" +
+            std::to_string(presumed.getLine()) + ": error: " + msg);
+        return;
+      }
+    }
+    result_.diagnostics.push_back("error: " + msg);
+  }
 
-void SubsetEnforcer::addError(clang::SourceLocation loc,
-                              std::string description,
-                              std::string suggestion) {
-    violations_.push_back(SubsetViolation{
-        loc, ViolationSeverity::Error, std::move(description),
-        std::move(suggestion)});
-}
+  clang::ASTContext& ctx_;
+  SubsetResult& result_;
+};
 
-void SubsetEnforcer::addWarning(clang::SourceLocation loc,
-                                std::string description,
-                                std::string suggestion) {
-    violations_.push_back(SubsetViolation{
-        loc, ViolationSeverity::Warning, std::move(description),
-        std::move(suggestion)});
-}
+} // namespace
 
-bool SubsetEnforcer::isInMainFile(clang::SourceLocation loc) const {
-    if (loc.isInvalid())
-        return false;
-    return context_.getSourceManager().isInMainFile(loc);
-}
-
-bool SubsetEnforcer::isRawPointerType(clang::QualType type) const {
-    return type->isPointerType() && !type->isFunctionPointerType();
+SubsetResult enforceSubset(clang::ASTContext& context) {
+  SubsetResult result;
+  SubsetVisitor visitor(context, result);
+  visitor.TraverseDecl(context.getTranslationUnitDecl());
+  return result;
 }
 
 } // namespace arcanum
