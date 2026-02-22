@@ -1,0 +1,74 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install essential development tools
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    wget \
+    flex \
+    bison \
+    gcc \
+    g++ \
+    gdb \
+    git \
+    sudo \
+    lsb-release \
+    software-properties-common \
+    gnupg \
+    libzstd-dev \
+    libz-dev \
+    python3 \
+    python3-pip \
+    opam \
+    z3 \
+    libgmp-dev \
+    pkg-config \
+    && apt-get clean
+
+# Install LLVM 21 via llvm.sh
+RUN wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    sudo ./llvm.sh 21 all && \
+    rm llvm.sh
+
+# Install MLIR development packages
+RUN apt-get update && apt-get install -y \
+    libmlir-21-dev \
+    mlir-21-tools \
+    && apt-get clean
+
+# Configure LLVM library path for dynamic linker
+RUN echo "/usr/lib/llvm-21/lib" > /etc/ld.so.conf.d/llvm-21.conf && ldconfig
+
+# Register clang alternatives
+RUN update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 100 \
+    --slave /usr/bin/clang++ clang++ /usr/bin/clang++-21 \
+    --slave /usr/bin/clang-format clang-format /usr/bin/clang-format-21 \
+    --slave /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-21 \
+    --slave /usr/bin/clangd clangd /usr/bin/clangd-21
+
+# Install Why3 via opam
+RUN opam init --disable-sandboxing --yes && \
+    eval $(opam env) && \
+    opam install why3 --yes --assume-depexts && \
+    cp $(opam var bin)/why3 /usr/local/bin/why3
+
+# Configure Why3 to use Z3
+RUN why3 config detect
+
+# Remove default ubuntu user
+RUN touch /var/mail/ubuntu && chown ubuntu /var/mail/ubuntu && userdel -r ubuntu
+
+# Create default devuser (UID/GID 1000) with sudo privileges
+RUN groupadd --gid 1000 devuser \
+    && useradd --uid 1000 --gid 1000 -m devuser \
+    && echo "devuser ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/devuser \
+    && chmod 0440 /etc/sudoers.d/devuser
+
+# Set the working directory
+WORKDIR /workspace
+RUN chown 1000:1000 /workspace
+
+CMD ["/bin/bash"]
