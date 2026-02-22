@@ -1,0 +1,64 @@
+name: Arcanum CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'arcanum/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'arcanum/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 21
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            llvm-21-dev \
+            libclang-21-dev \
+            libmlir-21-dev \
+            mlir-21-tools \
+            clang-21 \
+            cmake \
+            ninja-build
+
+      - name: Install Why3 and Z3
+        run: |
+          sudo apt-get install -y z3
+          pip install why3 || true
+          # Why3 may need opam-based install on CI
+          sudo apt-get install -y opam || true
+          opam init --auto-setup --disable-sandboxing --yes || true
+          eval $(opam env) || true
+          opam install why3 --yes || true
+
+      - name: Install lit and FileCheck
+        run: |
+          pip install lit
+          # FileCheck comes with LLVM
+
+      - name: Configure
+        run: |
+          cmake -S arcanum -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
+            -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
+            -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Unit Tests
+        run: cd build && ctest --output-on-failure
+
+      - name: Lit Integration Tests
+        run: cmake --build build --target check-arcanum
