@@ -147,7 +147,7 @@ public:
 
 private:
   std::string toWhyMLType(mlir::Type t) {
-    if (t.isa<arc::BoolType>()) {
+    if (mlir::isa<arc::BoolType>(t)) {
       return "bool";
     }
     return "int";
@@ -163,11 +163,11 @@ private:
     bool needsBool = false;
     auto& entryBlock = funcOp.getBody().front();
     for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
-      if (entryBlock.getArgument(i).getType().isa<arc::BoolType>())
+      if (mlir::isa<arc::BoolType>(entryBlock.getArgument(i).getType()))
         needsBool = true;
     }
     if (funcType.getNumResults() > 0 &&
-        funcType.getResult(0).isa<arc::BoolType>())
+        mlir::isa<arc::BoolType>(funcType.getResult(0)))
       needsBool = true;
 
     out << "module " << moduleName << "\n";

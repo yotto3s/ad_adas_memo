@@ -7,14 +7,14 @@ elseif(LLVM_DIR)
   get_filename_component(_LLVM_ROOT "${LLVM_DIR}" DIRECTORY)
   get_filename_component(_LLVM_ROOT "${_LLVM_ROOT}" DIRECTORY)
   get_filename_component(_LLVM_ROOT "${_LLVM_ROOT}" DIRECTORY)
-  find_program(_LIT_FOUND NAMES lit llvm-lit
+  find_program(_LIT_FOUND NAMES lit llvm-lit lit.py
       HINTS "${_LLVM_ROOT}/bin" "${_LLVM_ROOT}/build/utils/lit")
   if(_LIT_FOUND)
     set(_LIT_DEFAULT "${_LIT_FOUND}")
   endif()
 endif()
 if(NOT _LIT_DEFAULT)
-  find_program(_LIT_FOUND NAMES lit llvm-lit
+  find_program(_LIT_FOUND NAMES lit llvm-lit lit.py
       HINTS "/usr/lib/llvm-21/build/utils/lit" "/usr/lib/llvm-21/bin")
   if(_LIT_FOUND)
     set(_LIT_DEFAULT "${_LIT_FOUND}")
