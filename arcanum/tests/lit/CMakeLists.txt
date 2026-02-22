@@ -1,9 +1,38 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-set(LIT_COMMAND "${Python3_EXECUTABLE}" "/usr/lib/llvm-21/build/utils/lit/lit.py"
-    CACHE STRING "Command to run lit")
+# Locate lit: prefer LLVM_EXTERNAL_LIT, then search common paths, then fallback
+if(LLVM_EXTERNAL_LIT)
+  set(_LIT_DEFAULT "${LLVM_EXTERNAL_LIT}")
+elseif(LLVM_DIR)
+  get_filename_component(_LLVM_ROOT "${LLVM_DIR}" DIRECTORY)
+  get_filename_component(_LLVM_ROOT "${_LLVM_ROOT}" DIRECTORY)
+  get_filename_component(_LLVM_ROOT "${_LLVM_ROOT}" DIRECTORY)
+  find_program(_LIT_FOUND NAMES lit llvm-lit
+      HINTS "${_LLVM_ROOT}/bin" "${_LLVM_ROOT}/build/utils/lit")
+  if(_LIT_FOUND)
+    set(_LIT_DEFAULT "${_LIT_FOUND}")
+  endif()
+endif()
+if(NOT _LIT_DEFAULT)
+  find_program(_LIT_FOUND NAMES lit llvm-lit
+      HINTS "/usr/lib/llvm-21/build/utils/lit" "/usr/lib/llvm-21/bin")
+  if(_LIT_FOUND)
+    set(_LIT_DEFAULT "${_LIT_FOUND}")
+  else()
+    set(_LIT_DEFAULT "${Python3_EXECUTABLE}" "-m" "lit")
+  endif()
+endif()
+set(LIT_COMMAND ${_LIT_DEFAULT} CACHE STRING "Command to run lit")
 
-set(LLVM_TOOLS_DIR "/usr/lib/llvm-21/bin" CACHE PATH "Path to LLVM tools")
+# Locate LLVM tools directory
+if(LLVM_TOOLS_BINARY_DIR)
+  set(_TOOLS_DEFAULT "${LLVM_TOOLS_BINARY_DIR}")
+elseif(LLVM_DIR)
+  get_filename_component(_TOOLS_DEFAULT "${LLVM_DIR}/../../../bin" ABSOLUTE)
+else()
+  set(_TOOLS_DEFAULT "/usr/lib/llvm-21/bin")
+endif()
+set(LLVM_TOOLS_DIR "${_TOOLS_DEFAULT}" CACHE PATH "Path to LLVM tools")
 set(FILECHECK_PATH "${LLVM_TOOLS_DIR}/FileCheck" CACHE FILEPATH "Path to FileCheck")
 set(NOT_PATH "${LLVM_TOOLS_DIR}/not" CACHE FILEPATH "Path to not tool")
 

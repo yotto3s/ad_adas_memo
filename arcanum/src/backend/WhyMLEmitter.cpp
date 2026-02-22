@@ -54,6 +54,8 @@ std::string contractToWhyML(llvm::StringRef contract) {
       // division operator but an unexpected token, so we skip translation.
       if (i + 1 < contract.size() && contract[i + 1] == '\\') {
         // Defensive: unexpected `/\` in input -- output literally.
+        llvm::errs() << "warning: unexpected '/\\' sequence in contract "
+                        "expression: '" << contract << "'\n";
         result += contract[i];
         ++i;
       } else {
@@ -146,27 +148,53 @@ public:
   }
 
 private:
+  std::string toWhyMLType(mlir::Type t) {
+    if (t.isa<arc::BoolType>()) {
+      return "bool";
+    }
+    return "int";
+  }
+
   void emitFunction(arc::FuncOp funcOp, WhyMLResult& result) {
     std::ostringstream out;
     auto funcName = funcOp.getSymName().str();
     auto moduleName = toModuleName(funcName);
 
+    // Scan types to decide which Why3 modules are needed
+    auto funcType = funcOp.getFunctionType();
+    bool needsBool = false;
+    auto& entryBlock = funcOp.getBody().front();
+    for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
+      if (entryBlock.getArgument(i).getType().isa<arc::BoolType>())
+        needsBool = true;
+    }
+    if (funcType.getNumResults() > 0 &&
+        funcType.getResult(0).isa<arc::BoolType>())
+      needsBool = true;
+
     out << "module " << moduleName << "\n";
-    out << "  use int.Int\n\n";
+    out << "  use int.Int\n";
+    if (needsBool)
+      out << "  use bool.Bool\n";
+    out << "\n";
 
     // Function signature
     out << "  let " << funcName << " ";
 
     // Parameters - use original C++ names from param_names attribute
-    auto& entryBlock = funcOp.getBody().front();
     auto paramNames = getParamNames(funcOp);
     for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
       std::string pname =
           (i < paramNames.size()) ? paramNames[i]
                                   : ("arg" + std::to_string(i));
-      out << "(" << pname << ": int) ";
+      out << "(" << pname << ": " << toWhyMLType(entryBlock.getArgument(i).getType()) << ") ";
     }
-    out << ": int\n";
+
+    // Result type
+    std::string resultType = "int";
+    if (funcType.getNumResults() > 0)
+      resultType = toWhyMLType(funcType.getResult(0));
+    out << ": " << resultType << "\n";
 
     // Requires clauses
     if (auto reqAttr = funcOp.getRequiresAttrAttr()) {
@@ -227,8 +255,8 @@ private:
     auto lhs = getExpr(lhsVal, nameMap);
     auto rhs = getExpr(rhsVal, nameMap);
     auto expr = "(" + lhs + " " + whymlOp + " " + rhs + ")";
-    out << "    assert { -2147483648 <= " << lhs << " " << whymlOp << " "
-        << rhs << " <= 2147483647 };\n";
+    out << "    assert { -2147483648 <= " << expr << " /\\ " << expr
+        << " <= 2147483647 };\n";
     nameMap[result] = expr;
   }
 

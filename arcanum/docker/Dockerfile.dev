@@ -15,8 +15,10 @@ RUN apt-get update && apt-get install -y \
     nano \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Claude Code (official standalone installer)
-RUN curl -fsSL https://claude.ai/install.sh | bash -s latest \
+# Claude Code (official standalone installer — download then execute)
+RUN curl -fsSL -o /tmp/claude-install.sh https://claude.ai/install.sh \
+    && bash /tmp/claude-install.sh latest \
+    && rm -f /tmp/claude-install.sh \
     && cp -L /root/.local/bin/claude /usr/local/bin/claude \
     && rm -rf /root/.local/bin/claude /root/.claude
 

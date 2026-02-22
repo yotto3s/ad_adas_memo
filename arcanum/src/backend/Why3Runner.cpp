@@ -49,6 +49,7 @@ std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
           double seconds = 0.0;
           auto [ptr, ec] = std::from_chars(
               durStr.data(), durStr.data() + durStr.size(), seconds);
+          (void)ptr;
           if (ec == std::errc{}) {
             result.duration = std::chrono::milliseconds(
                 static_cast<int>(seconds * 1000));

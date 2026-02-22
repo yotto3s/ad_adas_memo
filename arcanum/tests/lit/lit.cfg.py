@@ -6,7 +6,7 @@ import lit.util
 
 config.name = "Arcanum"
 config.suffixes = [".cpp"]
-config.test_format = lit.formats.ShTest(not lit.util.which("bash"))
+config.test_format = lit.formats.ShTest(bool(lit.util.which("bash")))
 config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = config.arcanum_obj_root
 

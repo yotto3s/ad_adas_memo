@@ -65,9 +65,11 @@ TEST(WhyMLEmitterTest, EmitsOverflowAssertions) {
   auto result = emitWhyML(*module);
   ASSERT_TRUE(result.has_value());
 
-  // Check overflow bounds are emitted
+  // Check overflow bounds are emitted as a conjunction (valid WhyML)
   EXPECT_NE(result->whymlText.find("-2147483648"), std::string::npos);
   EXPECT_NE(result->whymlText.find("2147483647"), std::string::npos);
+  // Verify conjunction form, not chained comparison
+  EXPECT_NE(result->whymlText.find("/\\"), std::string::npos);
 }
 
 TEST(WhyMLEmitterTest, LocationMapPopulated) {
