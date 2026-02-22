@@ -1,0 +1,15 @@
+# -*- Python -*-
+
+import os
+import sys
+
+config.arcanum_obj_root = "@ARCANUM_OBJ_ROOT@"
+config.arcanum_src_root = "@ARCANUM_SRC_ROOT@"
+config.arcanum_path = "@ARCANUM_PATH@"
+config.filecheck_path = "@FILECHECK_PATH@"
+config.not_path = "@NOT_PATH@"
+
+config.test_source_root = os.path.dirname(__file__)
+
+# Load the main lit.cfg.py
+lit_config.load_config(config, os.path.join(config.test_source_root, "lit.cfg.py"))

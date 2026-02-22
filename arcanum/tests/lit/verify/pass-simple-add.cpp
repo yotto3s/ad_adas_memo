@@ -1,7 +1,5 @@
-// RUN: %arcanum --mode=verify %s 2>&1 | %FileCheck %s
-
-// Test end-to-end verification of a simple addition function.
-// All obligations should pass given the bounded inputs and output.
+// RUN: %arcanum --mode=verify %s | %FileCheck %s
+// CHECK: [PASS]{{.*}}safe_add{{.*}}obligations proven
 
 #include <cstdint>
 
@@ -11,7 +9,3 @@
 int32_t safe_add(int32_t a, int32_t b) {
     return a + b;
 }
-
-// CHECK: [PASS]
-// CHECK: safe_add
-// CHECK: obligations proven
