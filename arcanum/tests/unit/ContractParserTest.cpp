@@ -12,8 +12,7 @@ std::map<const clang::FunctionDecl*, ContractInfo>
 parseFromSource(const std::string& code,
                 std::unique_ptr<clang::ASTUnit>& astOut) {
   astOut = clang::tooling::buildASTFromCodeWithArgs(
-      code, {"-fparse-all-comments"}, "test.cpp",
-      "arcanum-test",
+      code, {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   EXPECT_NE(astOut, nullptr);
   return parseContracts(astOut->getASTContext());
@@ -25,7 +24,8 @@ TEST(ContractParserTest, ParsesSimpleRequires) {
     #include <cstdint>
     //@ requires: a >= 0
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
@@ -40,7 +40,8 @@ TEST(ContractParserTest, ParsesMultipleRequires) {
     //@ requires: a >= 0
     //@ requires: a <= 1000
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
@@ -53,7 +54,8 @@ TEST(ContractParserTest, ParsesEnsuresWithResult) {
     #include <cstdint>
     //@ ensures: \result >= 0
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
@@ -68,7 +70,8 @@ TEST(ContractParserTest, ParsesRequiresAndEnsures) {
     //@ requires: b >= 0 && b <= 1000
     //@ ensures: \result >= 0 && \result <= 2000
     int32_t safe_add(int32_t a, int32_t b) { return a + b; }
-  )", ast);
+  )",
+                                   ast);
 
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
@@ -81,7 +84,8 @@ TEST(ContractParserTest, NoContractsReturnsEmptyMap) {
   auto contracts = parseFromSource(R"(
     #include <cstdint>
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   EXPECT_TRUE(contracts.empty());
 }
@@ -92,7 +96,8 @@ TEST(ContractParserTest, ParsesBinaryComparisonExpr) {
     #include <cstdint>
     //@ requires: a >= 0
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.preconditions.size(), 1u);
@@ -111,7 +116,8 @@ TEST(ContractParserTest, ParsesAndExpression) {
     #include <cstdint>
     //@ requires: a >= 0 && a <= 1000
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.preconditions.size(), 1u);
@@ -126,7 +132,8 @@ TEST(ContractParserTest, ParsesResultRef) {
     #include <cstdint>
     //@ ensures: \result >= 0
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.postconditions.size(), 1u);
@@ -150,7 +157,8 @@ TEST(ContractParserTest, ParsesAllComparisonOperators) {
     //@ requires: a == 5
     //@ requires: a != 3
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.preconditions.size(), 6u);
@@ -168,7 +176,8 @@ TEST(ContractParserTest, ParsesArithmeticOperators) {
     #include <cstdint>
     //@ ensures: \result == a + b
     int32_t foo(int32_t a, int32_t b) { return a + b; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.postconditions.size(), 1u);
@@ -186,7 +195,8 @@ TEST(ContractParserTest, ParsesSubtraction) {
     #include <cstdint>
     //@ ensures: \result == a - b
     int32_t foo(int32_t a, int32_t b) { return a - b; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   auto& expr = it->second.postconditions[0];
@@ -199,7 +209,8 @@ TEST(ContractParserTest, ParsesMultiplication) {
     #include <cstdint>
     //@ ensures: \result == a * b
     int32_t foo(int32_t a, int32_t b) { return a * b; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   auto& expr = it->second.postconditions[0];
@@ -212,7 +223,8 @@ TEST(ContractParserTest, ParsesDivision) {
     #include <cstdint>
     //@ ensures: \result == a / b
     int32_t foo(int32_t a, int32_t b) { return a / b; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   auto& expr = it->second.postconditions[0];
@@ -225,7 +237,8 @@ TEST(ContractParserTest, ParsesRemainder) {
     #include <cstdint>
     //@ ensures: \result == a % b
     int32_t foo(int32_t a, int32_t b) { return a % b; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   auto& expr = it->second.postconditions[0];
@@ -238,7 +251,8 @@ TEST(ContractParserTest, ParsesOrExpression) {
     #include <cstdint>
     //@ requires: a > 0 || b > 0
     int32_t foo(int32_t a, int32_t b) { return a + b; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.preconditions.size(), 1u);
@@ -252,7 +266,8 @@ TEST(ContractParserTest, ParsesNotUnaryOp) {
     #include <cstdint>
     //@ requires: !false
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.preconditions.size(), 1u);
@@ -269,7 +284,8 @@ TEST(ContractParserTest, ParsesNegationUnaryOp) {
     #include <cstdint>
     //@ ensures: \result == -a
     int32_t foo(int32_t a) { return -a; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.postconditions.size(), 1u);
@@ -285,7 +301,8 @@ TEST(ContractParserTest, ParsesBoolLiterals) {
     //@ requires: true
     //@ ensures: false
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.preconditions.size(), 1u);
@@ -303,7 +320,8 @@ TEST(ContractParserTest, ParsesParenthesizedExpression) {
     #include <cstdint>
     //@ requires: (a + b) >= 0
     int32_t foo(int32_t a, int32_t b) { return a + b; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.preconditions.size(), 1u);
@@ -322,7 +340,8 @@ TEST(ContractParserTest, ParsesOperatorPrecedence) {
     #include <cstdint>
     //@ ensures: \result == a + b * c
     int32_t foo(int32_t a, int32_t b, int32_t c) { return a + b * c; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   ASSERT_EQ(it->second.postconditions.size(), 1u);
@@ -343,7 +362,8 @@ TEST(ContractParserTest, ParsesIntegerLiteral) {
     #include <cstdint>
     //@ requires: a >= 42
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   auto it = contracts.begin();
   auto& expr = it->second.preconditions[0];
@@ -358,10 +378,12 @@ TEST(ContractParserTest, MalformedExpressionReturnsNull) {
     #include <cstdint>
     //@ requires: @#$invalid
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   // Malformed expression should result in no preconditions being added
-  // (because parse returns nullptr which is filtered by the `if (auto expr)` check)
+  // (because parse returns nullptr which is filtered by the `if (auto expr)`
+  // check)
   auto it = contracts.begin();
   if (it != contracts.end()) {
     EXPECT_TRUE(it->second.preconditions.empty());
@@ -374,7 +396,8 @@ TEST(ContractParserTest, EmptyExpressionReturnsNull) {
     #include <cstdint>
     //@ requires:
     int32_t foo(int32_t a) { return a; }
-  )", ast);
+  )",
+                                   ast);
 
   // Empty expression should not add any preconditions
   if (!contracts.empty()) {

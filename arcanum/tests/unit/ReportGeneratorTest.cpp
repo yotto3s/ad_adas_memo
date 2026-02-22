@@ -7,12 +7,10 @@ namespace {
 
 TEST(ReportGeneratorTest, AllPassedReport) {
   std::vector<ObligationResult> obligations;
-  obligations.push_back(
-      {"overflow_check'vc", ObligationStatus::Valid,
-       std::chrono::milliseconds(100)});
-  obligations.push_back(
-      {"postcondition'vc", ObligationStatus::Valid,
-       std::chrono::milliseconds(200)});
+  obligations.push_back({"overflow_check'vc", ObligationStatus::Valid,
+                         std::chrono::milliseconds(100)});
+  obligations.push_back({"postcondition'vc", ObligationStatus::Valid,
+                         std::chrono::milliseconds(200)});
 
   std::map<std::string, LocationEntry> locMap;
   locMap["safe_add"] = {"safe_add", "input.cpp", 6};
@@ -30,12 +28,10 @@ TEST(ReportGeneratorTest, AllPassedReport) {
 
 TEST(ReportGeneratorTest, FailedReport) {
   std::vector<ObligationResult> obligations;
-  obligations.push_back(
-      {"overflow_check'vc", ObligationStatus::Valid,
-       std::chrono::milliseconds(100)});
-  obligations.push_back(
-      {"postcondition'vc", ObligationStatus::Unknown,
-       std::chrono::milliseconds(200)});
+  obligations.push_back({"overflow_check'vc", ObligationStatus::Valid,
+                         std::chrono::milliseconds(100)});
+  obligations.push_back({"postcondition'vc", ObligationStatus::Unknown,
+                         std::chrono::milliseconds(200)});
 
   std::map<std::string, LocationEntry> locMap;
   locMap["bad_func"] = {"bad_func", "input.cpp", 10};
@@ -48,9 +44,8 @@ TEST(ReportGeneratorTest, FailedReport) {
 
 TEST(ReportGeneratorTest, TimeoutReport) {
   std::vector<ObligationResult> obligations;
-  obligations.push_back(
-      {"invariant'vc", ObligationStatus::Timeout,
-       std::chrono::milliseconds(30000)});
+  obligations.push_back({"invariant'vc", ObligationStatus::Timeout,
+                         std::chrono::milliseconds(30000)});
 
   std::map<std::string, LocationEntry> locMap;
 
@@ -74,17 +69,13 @@ TEST(ReportGeneratorTest, EmptyObligations) {
 TEST(ReportGeneratorTest, MixedObligationStatuses) {
   std::vector<ObligationResult> obligations;
   obligations.push_back(
-      {"overflow'vc", ObligationStatus::Valid,
-       std::chrono::milliseconds(50)});
-  obligations.push_back(
-      {"postcondition'vc", ObligationStatus::Timeout,
-       std::chrono::milliseconds(30000)});
-  obligations.push_back(
-      {"precondition'vc", ObligationStatus::Unknown,
-       std::chrono::milliseconds(0)});
-  obligations.push_back(
-      {"assertion'vc", ObligationStatus::Failure,
-       std::chrono::milliseconds(0)});
+      {"overflow'vc", ObligationStatus::Valid, std::chrono::milliseconds(50)});
+  obligations.push_back({"postcondition'vc", ObligationStatus::Timeout,
+                         std::chrono::milliseconds(30000)});
+  obligations.push_back({"precondition'vc", ObligationStatus::Unknown,
+                         std::chrono::milliseconds(0)});
+  obligations.push_back({"assertion'vc", ObligationStatus::Failure,
+                         std::chrono::milliseconds(0)});
 
   std::map<std::string, LocationEntry> locMap;
   locMap["mixed_func"] = {"mixed_func", "input.cpp", 5};

@@ -4,9 +4,9 @@
 #include "backend/Why3Runner.h"
 #include "backend/WhyMLEmitter.h"
 
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
 
 namespace arcanum {
 
@@ -19,9 +19,8 @@ struct Report {
 };
 
 /// Generate a human-readable verification report.
-Report generateReport(
-    const std::vector<ObligationResult>& obligations,
-    const std::map<std::string, LocationEntry>& locationMap);
+Report generateReport(const std::vector<ObligationResult>& obligations,
+                      const std::map<std::string, LocationEntry>& locationMap);
 
 } // namespace arcanum
 

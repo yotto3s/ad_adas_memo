@@ -40,7 +40,8 @@ std::string contractToWhyML(llvm::StringRef contract) {
     } else if (contract.substr(i).starts_with("!=")) {
       result += "<>";
       i += 2;
-    } else if (contract[i] == '!' && (i + 1 >= contract.size() || contract[i + 1] != '=')) {
+    } else if (contract[i] == '!' &&
+               (i + 1 >= contract.size() || contract[i + 1] != '=')) {
       result += "not ";
       ++i;
     } else if (contract[i] == '%') {
@@ -55,7 +56,8 @@ std::string contractToWhyML(llvm::StringRef contract) {
       if (i + 1 < contract.size() && contract[i + 1] == '\\') {
         // Defensive: unexpected `/\` in input -- output literally.
         llvm::errs() << "warning: unexpected '/\\' sequence in contract "
-                        "expression: '" << contract << "'\n";
+                        "expression: '"
+                     << contract << "'\n";
         result += contract[i];
         ++i;
       } else {
@@ -82,8 +84,7 @@ std::string toModuleName(llvm::StringRef funcName) {
       if (c == '_') {
         nextUpper = true;
       } else if (nextUpper) {
-        camel += static_cast<char>(
-            std::toupper(static_cast<unsigned char>(c)));
+        camel += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         nextUpper = false;
       } else {
         camel += c;
@@ -102,8 +103,7 @@ llvm::SmallVector<std::string> getParamNames(arc::FuncOp funcOp) {
   if (auto paramNamesAttr =
           funcOp->getAttrOfType<mlir::ArrayAttr>("param_names")) {
     for (auto attr : paramNamesAttr) {
-      names.push_back(
-          llvm::cast<mlir::StringAttr>(attr).getValue().str());
+      names.push_back(llvm::cast<mlir::StringAttr>(attr).getValue().str());
     }
   }
   return names;
@@ -116,9 +116,7 @@ public:
   std::optional<WhyMLResult> emit() {
     WhyMLResult result;
 
-    module_.walk([&](arc::FuncOp funcOp) {
-      emitFunction(funcOp, result);
-    });
+    module_.walk([&](arc::FuncOp funcOp) { emitFunction(funcOp, result); });
 
     if (result.whymlText.empty()) {
       return std::nullopt;
@@ -185,9 +183,9 @@ private:
     auto paramNames = getParamNames(funcOp);
     for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
       std::string pname =
-          (i < paramNames.size()) ? paramNames[i]
-                                  : ("arg" + std::to_string(i));
-      out << "(" << pname << ": " << toWhyMLType(entryBlock.getArgument(i).getType()) << ") ";
+          (i < paramNames.size()) ? paramNames[i] : ("arg" + std::to_string(i));
+      out << "(" << pname << ": "
+          << toWhyMLType(entryBlock.getArgument(i).getType()) << ") ";
     }
 
     // Result type
@@ -237,8 +235,7 @@ private:
     auto paramNames = getParamNames(funcOp);
     for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
       std::string pname =
-          (i < paramNames.size()) ? paramNames[i]
-                                  : ("arg" + std::to_string(i));
+          (i < paramNames.size()) ? paramNames[i] : ("arg" + std::to_string(i));
       nameMap[entryBlock.getArgument(i)] = pname;
     }
 
@@ -261,10 +258,9 @@ private:
   }
 
   /// Emit a division-like op with a divisor-not-zero assertion.
-  void emitDivLikeOp(
-      mlir::Value result, mlir::Value lhsVal, mlir::Value rhsVal,
-      const std::string& whymlFunc, std::ostringstream& out,
-      llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+  void emitDivLikeOp(mlir::Value result, mlir::Value lhsVal, mlir::Value rhsVal,
+                     const std::string& whymlFunc, std::ostringstream& out,
+                     llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto lhs = getExpr(lhsVal, nameMap);
     auto rhs = getExpr(rhsVal, nameMap);
     auto expr = "(" + whymlFunc + " " + lhs + " " + rhs + ")";
@@ -284,33 +280,37 @@ private:
       }
       nameMap[constOp.getResult()] = valStr;
     } else if (auto addOp = llvm::dyn_cast<arc::AddOp>(&op)) {
-      emitArithWithOverflowCheck(
-          addOp.getResult(), addOp.getLhs(), addOp.getRhs(), "+", out, nameMap);
+      emitArithWithOverflowCheck(addOp.getResult(), addOp.getLhs(),
+                                 addOp.getRhs(), "+", out, nameMap);
     } else if (auto subOp = llvm::dyn_cast<arc::SubOp>(&op)) {
-      emitArithWithOverflowCheck(
-          subOp.getResult(), subOp.getLhs(), subOp.getRhs(), "-", out, nameMap);
+      emitArithWithOverflowCheck(subOp.getResult(), subOp.getLhs(),
+                                 subOp.getRhs(), "-", out, nameMap);
     } else if (auto mulOp = llvm::dyn_cast<arc::MulOp>(&op)) {
-      emitArithWithOverflowCheck(
-          mulOp.getResult(), mulOp.getLhs(), mulOp.getRhs(), "*", out, nameMap);
+      emitArithWithOverflowCheck(mulOp.getResult(), mulOp.getLhs(),
+                                 mulOp.getRhs(), "*", out, nameMap);
     } else if (auto divOp = llvm::dyn_cast<arc::DivOp>(&op)) {
-      emitDivLikeOp(
-          divOp.getResult(), divOp.getLhs(), divOp.getRhs(), "div", out,
-          nameMap);
+      emitDivLikeOp(divOp.getResult(), divOp.getLhs(), divOp.getRhs(), "div",
+                    out, nameMap);
     } else if (auto remOp = llvm::dyn_cast<arc::RemOp>(&op)) {
-      emitDivLikeOp(
-          remOp.getResult(), remOp.getLhs(), remOp.getRhs(), "mod", out,
-          nameMap);
+      emitDivLikeOp(remOp.getResult(), remOp.getLhs(), remOp.getRhs(), "mod",
+                    out, nameMap);
     } else if (auto cmpOp = llvm::dyn_cast<arc::CmpOp>(&op)) {
       auto lhs = getExpr(cmpOp.getLhs(), nameMap);
       auto rhs = getExpr(cmpOp.getRhs(), nameMap);
       auto pred = cmpOp.getPredicate().str();
       std::string whymlOp;
-      if (pred == "lt") whymlOp = "<";
-      else if (pred == "le") whymlOp = "<=";
-      else if (pred == "gt") whymlOp = ">";
-      else if (pred == "ge") whymlOp = ">=";
-      else if (pred == "eq") whymlOp = "=";
-      else if (pred == "ne") whymlOp = "<>";
+      if (pred == "lt")
+        whymlOp = "<";
+      else if (pred == "le")
+        whymlOp = "<=";
+      else if (pred == "gt")
+        whymlOp = ">";
+      else if (pred == "ge")
+        whymlOp = ">=";
+      else if (pred == "eq")
+        whymlOp = "=";
+      else if (pred == "ne")
+        whymlOp = "<>";
       else {
         llvm::errs() << "warning: unknown comparison predicate '" << pred
                      << "', defaulting to '='\n";

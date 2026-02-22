@@ -23,10 +23,10 @@ namespace {
 
 class ArcLowering {
 public:
-  ArcLowering(mlir::MLIRContext& ctx, clang::ASTContext& astCtx,
-              const std::map<const clang::FunctionDecl*, ContractInfo>& contracts)
-      : mlirCtx_(ctx), astCtx_(astCtx), contracts_(contracts),
-        builder_(&ctx) {
+  ArcLowering(
+      mlir::MLIRContext& ctx, clang::ASTContext& astCtx,
+      const std::map<const clang::FunctionDecl*, ContractInfo>& contracts)
+      : mlirCtx_(ctx), astCtx_(astCtx), contracts_(contracts), builder_(&ctx) {
     ctx.getOrLoadDialect<arc::ArcDialect>();
   }
 
@@ -52,8 +52,8 @@ private:
       auto presumed = sm.getPresumedLoc(clangLoc);
       if (presumed.isValid()) {
         return mlir::FileLineColLoc::get(
-            builder_.getStringAttr(presumed.getFilename()),
-            presumed.getLine(), presumed.getColumn());
+            builder_.getStringAttr(presumed.getFilename()), presumed.getLine(),
+            presumed.getColumn());
       }
     }
     return builder_.getUnknownLoc();
@@ -97,11 +97,13 @@ private:
       // Future slices will use structured MLIR attributes.
       std::string reqStr, ensStr;
       for (size_t i = 0; i < it->second.preconditions.size(); ++i) {
-        if (i > 0) reqStr += " && ";
+        if (i > 0)
+          reqStr += " && ";
         reqStr += serializeExpr(it->second.preconditions[i]);
       }
       for (size_t i = 0; i < it->second.postconditions.size(); ++i) {
-        if (i > 0) ensStr += " && ";
+        if (i > 0)
+          ensStr += " && ";
         ensStr += serializeExpr(it->second.postconditions[i]);
       }
       if (!reqStr.empty()) {
@@ -114,8 +116,8 @@ private:
 
     // Create arc.func
     auto funcOp = builder_.create<arc::FuncOp>(
-        loc, builder_.getStringAttr(name),
-        mlir::TypeAttr::get(funcType), requiresAttr, ensuresAttr);
+        loc, builder_.getStringAttr(name), mlir::TypeAttr::get(funcType),
+        requiresAttr, ensuresAttr);
 
     // Store parameter names as an attribute for the WhyML emitter
     llvm::SmallVector<mlir::Attribute> paramNameAttrs;
@@ -123,8 +125,7 @@ private:
       paramNameAttrs.push_back(
           builder_.getStringAttr(param->getNameAsString()));
     }
-    funcOp->setAttr("param_names",
-                     builder_.getArrayAttr(paramNameAttrs));
+    funcOp->setAttr("param_names", builder_.getArrayAttr(paramNameAttrs));
 
     // Create entry block with parameters
     auto& entryBlock = funcOp.getBody().emplaceBlock();
@@ -145,8 +146,9 @@ private:
     builder_.restoreInsertionPoint(savedIp);
   }
 
-  void lowerStmt(const clang::Stmt* stmt,
-                 llvm::DenseMap<const clang::ValueDecl*, mlir::Value>& valueMap) {
+  void
+  lowerStmt(const clang::Stmt* stmt,
+            llvm::DenseMap<const clang::ValueDecl*, mlir::Value>& valueMap) {
     if (auto* compound = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
       for (const auto* child : compound->body()) {
         lowerStmt(child, valueMap);
@@ -161,8 +163,8 @@ private:
             auto initVal = lowerExpr(varDecl->getInit(), valueMap);
             auto loc = getLoc(varDecl->getLocation());
             auto varOp = builder_.create<arc::VarOp>(
-                loc, getArcType(varDecl->getType()),
-                varDecl->getNameAsString(), initVal);
+                loc, getArcType(varDecl->getType()), varDecl->getNameAsString(),
+                initVal);
             valueMap[varDecl] = varOp.getResult();
           }
         }
@@ -198,16 +200,16 @@ private:
     // TODO: handle assignment expressions in Slice 1
   }
 
-  mlir::Value lowerExpr(const clang::Expr* expr,
-                        llvm::DenseMap<const clang::ValueDecl*, mlir::Value>& valueMap) {
+  mlir::Value
+  lowerExpr(const clang::Expr* expr,
+            llvm::DenseMap<const clang::ValueDecl*, mlir::Value>& valueMap) {
     expr = expr->IgnoreParenImpCasts();
     auto loc = getLoc(expr->getBeginLoc());
 
     if (auto* intLit = llvm::dyn_cast<clang::IntegerLiteral>(expr)) {
       auto val = intLit->getValue().getSExtValue();
-      return builder_.create<arc::ConstantOp>(
-          loc, arc::I32Type::get(&mlirCtx_),
-          builder_.getI32IntegerAttr(val));
+      return builder_.create<arc::ConstantOp>(loc, arc::I32Type::get(&mlirCtx_),
+                                              builder_.getI32IntegerAttr(val));
     }
 
     if (auto* boolLit = llvm::dyn_cast<clang::CXXBoolLiteralExpr>(expr)) {
@@ -226,8 +228,8 @@ private:
                    << declRef->getDecl()->getNameAsString()
                    << "', using zero fallback\n";
       DiagnosticTracker::recordFallback();
-      return builder_.create<arc::ConstantOp>(
-          loc, arc::I32Type::get(&mlirCtx_), builder_.getI32IntegerAttr(0));
+      return builder_.create<arc::ConstantOp>(loc, arc::I32Type::get(&mlirCtx_),
+                                              builder_.getI32IntegerAttr(0));
     }
 
     if (auto* binOp = llvm::dyn_cast<clang::BinaryOperator>(expr)) {
@@ -246,35 +248,35 @@ private:
       case clang::BO_Rem:
         return builder_.create<arc::RemOp>(loc, lhs.getType(), lhs, rhs);
       case clang::BO_LT:
-        return builder_.create<arc::CmpOp>(
-            loc, arc::BoolType::get(&mlirCtx_),
-            builder_.getStringAttr("lt"), lhs, rhs);
+        return builder_.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx_),
+                                           builder_.getStringAttr("lt"), lhs,
+                                           rhs);
       case clang::BO_LE:
-        return builder_.create<arc::CmpOp>(
-            loc, arc::BoolType::get(&mlirCtx_),
-            builder_.getStringAttr("le"), lhs, rhs);
+        return builder_.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx_),
+                                           builder_.getStringAttr("le"), lhs,
+                                           rhs);
       case clang::BO_GT:
-        return builder_.create<arc::CmpOp>(
-            loc, arc::BoolType::get(&mlirCtx_),
-            builder_.getStringAttr("gt"), lhs, rhs);
+        return builder_.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx_),
+                                           builder_.getStringAttr("gt"), lhs,
+                                           rhs);
       case clang::BO_GE:
-        return builder_.create<arc::CmpOp>(
-            loc, arc::BoolType::get(&mlirCtx_),
-            builder_.getStringAttr("ge"), lhs, rhs);
+        return builder_.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx_),
+                                           builder_.getStringAttr("ge"), lhs,
+                                           rhs);
       case clang::BO_EQ:
-        return builder_.create<arc::CmpOp>(
-            loc, arc::BoolType::get(&mlirCtx_),
-            builder_.getStringAttr("eq"), lhs, rhs);
+        return builder_.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx_),
+                                           builder_.getStringAttr("eq"), lhs,
+                                           rhs);
       case clang::BO_NE:
-        return builder_.create<arc::CmpOp>(
-            loc, arc::BoolType::get(&mlirCtx_),
-            builder_.getStringAttr("ne"), lhs, rhs);
+        return builder_.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx_),
+                                           builder_.getStringAttr("ne"), lhs,
+                                           rhs);
       case clang::BO_LAnd:
-        return builder_.create<arc::AndOp>(
-            loc, arc::BoolType::get(&mlirCtx_), lhs, rhs);
+        return builder_.create<arc::AndOp>(loc, arc::BoolType::get(&mlirCtx_),
+                                           lhs, rhs);
       case clang::BO_LOr:
-        return builder_.create<arc::OrOp>(
-            loc, arc::BoolType::get(&mlirCtx_), lhs, rhs);
+        return builder_.create<arc::OrOp>(loc, arc::BoolType::get(&mlirCtx_),
+                                          lhs, rhs);
       default:
         llvm::errs() << "warning: unhandled binary operator opcode "
                      << binOp->getOpcodeStr() << "\n";
@@ -286,12 +288,13 @@ private:
       auto operand = lowerExpr(unaryOp->getSubExpr(), valueMap);
       switch (unaryOp->getOpcode()) {
       case clang::UO_LNot:
-        return builder_.create<arc::NotOp>(
-            loc, arc::BoolType::get(&mlirCtx_), operand);
+        return builder_.create<arc::NotOp>(loc, arc::BoolType::get(&mlirCtx_),
+                                           operand);
       case clang::UO_Minus: {
         auto zero = builder_.create<arc::ConstantOp>(
             loc, arc::I32Type::get(&mlirCtx_), builder_.getI32IntegerAttr(0));
-        return builder_.create<arc::SubOp>(loc, operand.getType(), zero, operand);
+        return builder_.create<arc::SubOp>(loc, operand.getType(), zero,
+                                           operand);
       }
       default:
         break;
@@ -302,8 +305,8 @@ private:
     llvm::errs() << "warning: unrecognized expression in lowering, using zero "
                     "fallback\n";
     DiagnosticTracker::recordFallback();
-    return builder_.create<arc::ConstantOp>(
-        loc, arc::I32Type::get(&mlirCtx_), builder_.getI32IntegerAttr(0));
+    return builder_.create<arc::ConstantOp>(loc, arc::I32Type::get(&mlirCtx_),
+                                            builder_.getI32IntegerAttr(0));
   }
 
   std::string serializeExpr(const ContractExprPtr& expr) {
@@ -319,19 +322,45 @@ private:
     case ContractExprKind::BinaryOp: {
       std::string op;
       switch (expr->binaryOp) {
-      case BinaryOpKind::Add: op = "+"; break;
-      case BinaryOpKind::Sub: op = "-"; break;
-      case BinaryOpKind::Mul: op = "*"; break;
-      case BinaryOpKind::Div: op = "/"; break;
-      case BinaryOpKind::Rem: op = "%"; break;
-      case BinaryOpKind::Lt: op = "<"; break;
-      case BinaryOpKind::Le: op = "<="; break;
-      case BinaryOpKind::Gt: op = ">"; break;
-      case BinaryOpKind::Ge: op = ">="; break;
-      case BinaryOpKind::Eq: op = "=="; break;
-      case BinaryOpKind::Ne: op = "!="; break;
-      case BinaryOpKind::And: op = "&&"; break;
-      case BinaryOpKind::Or: op = "||"; break;
+      case BinaryOpKind::Add:
+        op = "+";
+        break;
+      case BinaryOpKind::Sub:
+        op = "-";
+        break;
+      case BinaryOpKind::Mul:
+        op = "*";
+        break;
+      case BinaryOpKind::Div:
+        op = "/";
+        break;
+      case BinaryOpKind::Rem:
+        op = "%";
+        break;
+      case BinaryOpKind::Lt:
+        op = "<";
+        break;
+      case BinaryOpKind::Le:
+        op = "<=";
+        break;
+      case BinaryOpKind::Gt:
+        op = ">";
+        break;
+      case BinaryOpKind::Ge:
+        op = ">=";
+        break;
+      case BinaryOpKind::Eq:
+        op = "==";
+        break;
+      case BinaryOpKind::Ne:
+        op = "!=";
+        break;
+      case BinaryOpKind::And:
+        op = "&&";
+        break;
+      case BinaryOpKind::Or:
+        op = "||";
+        break;
       }
       return "(" + serializeExpr(expr->left) + " " + op + " " +
              serializeExpr(expr->right) + ")";
@@ -354,8 +383,7 @@ private:
 } // namespace
 
 mlir::OwningOpRef<mlir::ModuleOp> lowerToArc(
-    mlir::MLIRContext& context,
-    clang::ASTContext& astContext,
+    mlir::MLIRContext& context, clang::ASTContext& astContext,
     const std::map<const clang::FunctionDecl*, ContractInfo>& contracts) {
   ArcLowering lowering(context, astContext, contracts);
   return lowering.lower();

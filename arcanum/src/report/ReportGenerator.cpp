@@ -5,9 +5,8 @@
 
 namespace arcanum {
 
-Report generateReport(
-    const std::vector<ObligationResult>& obligations,
-    const std::map<std::string, LocationEntry>& locationMap) {
+Report generateReport(const std::vector<ObligationResult>& obligations,
+                      const std::map<std::string, LocationEntry>& locationMap) {
   Report report;
 
   int validCount = 0;
@@ -34,8 +33,7 @@ Report generateReport(
 
   std::ostringstream out;
 
-  double totalSeconds =
-      static_cast<double>(totalDuration.count()) / 1000.0;
+  double totalSeconds = static_cast<double>(totalDuration.count()) / 1000.0;
 
   // Per-function report line
   if (totalCount > 0) {
@@ -49,8 +47,8 @@ Report generateReport(
     }
 
     if (validCount == totalCount) {
-      out << "[PASS]  " << funcLine << "    " << validCount << "/"
-          << totalCount << " obligations proven (" << std::fixed;
+      out << "[PASS]  " << funcLine << "    " << validCount << "/" << totalCount
+          << " obligations proven (" << std::fixed;
       out.precision(1);
       out << totalSeconds << "s)\n";
       report.passCount = 1;
@@ -62,8 +60,8 @@ Report generateReport(
       report.timeoutCount = 1;
       report.allPassed = false;
     } else {
-      out << "[FAIL]  " << funcLine << "    " << validCount << "/"
-          << totalCount << " obligations proven (" << std::fixed;
+      out << "[FAIL]  " << funcLine << "    " << validCount << "/" << totalCount
+          << " obligations proven (" << std::fixed;
       out.precision(1);
       out << totalSeconds << "s)\n";
       report.failCount = 1;

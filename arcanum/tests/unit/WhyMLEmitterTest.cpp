@@ -5,9 +5,9 @@
 #include "dialect/Lowering.h"
 #include "frontend/ContractParser.h"
 
-#include "clang/Tooling/Tooling.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
+#include "clang/Tooling/Tooling.h"
 
 #include <gtest/gtest.h>
 
@@ -15,7 +15,8 @@ namespace arcanum {
 namespace {
 
 TEST(WhyMLEmitterTest, EmitsSafeAddModule) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     //@ requires: a >= 0 && a <= 1000
     //@ requires: b >= 0 && b <= 1000
@@ -23,7 +24,8 @@ TEST(WhyMLEmitterTest, EmitsSafeAddModule) {
     int32_t safe_add(int32_t a, int32_t b) {
       return a + b;
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -45,7 +47,8 @@ TEST(WhyMLEmitterTest, EmitsSafeAddModule) {
 }
 
 TEST(WhyMLEmitterTest, EmitsOverflowAssertions) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     //@ requires: a >= 0 && a <= 1000
     //@ requires: b >= 0 && b <= 1000
@@ -53,7 +56,8 @@ TEST(WhyMLEmitterTest, EmitsOverflowAssertions) {
     int32_t safe_add(int32_t a, int32_t b) {
       return a + b;
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -73,11 +77,13 @@ TEST(WhyMLEmitterTest, EmitsOverflowAssertions) {
 }
 
 TEST(WhyMLEmitterTest, LocationMapPopulated) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     //@ ensures: \result >= 0
     int32_t foo(int32_t a) { return a; }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -93,12 +99,14 @@ TEST(WhyMLEmitterTest, LocationMapPopulated) {
 
 // TC-16: Test contractToWhyML translation rules
 TEST(WhyMLEmitterTest, ContractTranslationInWhyML) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     //@ requires: a >= 0 && a <= 1000
     //@ ensures: \result >= 0
     int32_t foo(int32_t a) { return a; }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -118,11 +126,13 @@ TEST(WhyMLEmitterTest, ContractTranslationInWhyML) {
 
 // TC-17: Test module name conversion
 TEST(WhyMLEmitterTest, SnakeCaseToModuleName) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     //@ ensures: \result >= 0
     int32_t my_func_name(int32_t a) { return a; }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -140,10 +150,12 @@ TEST(WhyMLEmitterTest, SnakeCaseToModuleName) {
 
 // TC-18: Test subtraction overflow assertion
 TEST(WhyMLEmitterTest, EmitsSubtractionOverflowAssertion) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     int32_t sub(int32_t a, int32_t b) { return a - b; }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -162,10 +174,12 @@ TEST(WhyMLEmitterTest, EmitsSubtractionOverflowAssertion) {
 
 // TC-18: Test division-by-zero assertion
 TEST(WhyMLEmitterTest, EmitsDivisionByZeroAssertion) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     int32_t mydiv(int32_t a, int32_t b) { return a / b; }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -184,13 +198,15 @@ TEST(WhyMLEmitterTest, EmitsDivisionByZeroAssertion) {
 
 // TC-18: Test VarOp emission
 TEST(WhyMLEmitterTest, EmitsLetBinding) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     int32_t withVar(int32_t a) {
       int32_t x = a + 1;
       return x;
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -221,10 +237,12 @@ TEST(WhyMLEmitterTest, EmptyModuleReturnsNullopt) {
 
 // TC-18: Test comparison emission
 TEST(WhyMLEmitterTest, EmitsComparisonExpression) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     bool isPositive(int32_t a) { return a > 0; }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -242,11 +260,13 @@ TEST(WhyMLEmitterTest, EmitsComparisonExpression) {
 
 // TC-18: Test original C++ parameter names in WhyML
 TEST(WhyMLEmitterTest, UsesOriginalParameterNames) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     //@ requires: count >= 0
     int32_t foo(int32_t count) { return count; }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 

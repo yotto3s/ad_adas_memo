@@ -90,32 +90,27 @@ void ConstantOp::print(mlir::OpAsmPrinter& printer) {
 // Arithmetic ops custom assembly format
 //===----------------------------------------------------------------------===//
 
-mlir::ParseResult AddOp::parse(mlir::OpAsmParser& p,
-                               mlir::OperationState& r) {
+mlir::ParseResult AddOp::parse(mlir::OpAsmParser& p, mlir::OperationState& r) {
   return parseBinaryOp(p, r);
 }
 void AddOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }
 
-mlir::ParseResult SubOp::parse(mlir::OpAsmParser& p,
-                               mlir::OperationState& r) {
+mlir::ParseResult SubOp::parse(mlir::OpAsmParser& p, mlir::OperationState& r) {
   return parseBinaryOp(p, r);
 }
 void SubOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }
 
-mlir::ParseResult MulOp::parse(mlir::OpAsmParser& p,
-                               mlir::OperationState& r) {
+mlir::ParseResult MulOp::parse(mlir::OpAsmParser& p, mlir::OperationState& r) {
   return parseBinaryOp(p, r);
 }
 void MulOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }
 
-mlir::ParseResult DivOp::parse(mlir::OpAsmParser& p,
-                               mlir::OperationState& r) {
+mlir::ParseResult DivOp::parse(mlir::OpAsmParser& p, mlir::OperationState& r) {
   return parseBinaryOp(p, r);
 }
 void DivOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }
 
-mlir::ParseResult RemOp::parse(mlir::OpAsmParser& p,
-                               mlir::OperationState& r) {
+mlir::ParseResult RemOp::parse(mlir::OpAsmParser& p, mlir::OperationState& r) {
   return parseBinaryOp(p, r);
 }
 void RemOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }
@@ -125,7 +120,7 @@ void RemOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }
 //===----------------------------------------------------------------------===//
 
 mlir::ParseResult CmpOp::parse(mlir::OpAsmParser& parser,
-                                mlir::OperationState& result) {
+                               mlir::OperationState& result) {
   return mlir::failure(); // TODO: implement full parser
 }
 
@@ -139,14 +134,12 @@ void CmpOp::print(mlir::OpAsmPrinter& printer) {
 // Logical ops custom assembly format
 //===----------------------------------------------------------------------===//
 
-mlir::ParseResult AndOp::parse(mlir::OpAsmParser& p,
-                               mlir::OperationState& r) {
+mlir::ParseResult AndOp::parse(mlir::OpAsmParser& p, mlir::OperationState& r) {
   return parseBinaryOp(p, r);
 }
 void AndOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }
 
-mlir::ParseResult OrOp::parse(mlir::OpAsmParser& p,
-                              mlir::OperationState& r) {
+mlir::ParseResult OrOp::parse(mlir::OpAsmParser& p, mlir::OperationState& r) {
   return parseBinaryOp(p, r);
 }
 void OrOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }

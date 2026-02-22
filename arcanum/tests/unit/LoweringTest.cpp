@@ -1,11 +1,11 @@
 #include "dialect/Lowering.h"
-#include "frontend/ContractParser.h"
 #include "dialect/ArcDialect.h"
 #include "dialect/ArcOps.h"
+#include "frontend/ContractParser.h"
 
-#include "clang/Tooling/Tooling.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
+#include "clang/Tooling/Tooling.h"
 
 #include <gtest/gtest.h>
 
@@ -13,7 +13,8 @@ namespace arcanum {
 namespace {
 
 TEST(LoweringTest, LowersSimpleAddFunction) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     //@ requires: a >= 0 && a <= 1000
     //@ requires: b >= 0 && b <= 1000
@@ -21,7 +22,8 @@ TEST(LoweringTest, LowersSimpleAddFunction) {
     int32_t safe_add(int32_t a, int32_t b) {
       return a + b;
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -41,7 +43,8 @@ TEST(LoweringTest, LowersSimpleAddFunction) {
 }
 
 TEST(LoweringTest, LowersIfElseFunction) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     int32_t myAbs(int32_t x) {
       if (x < 0) {
@@ -50,7 +53,8 @@ TEST(LoweringTest, LowersIfElseFunction) {
         return x;
       }
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -60,22 +64,22 @@ TEST(LoweringTest, LowersIfElseFunction) {
   ASSERT_TRUE(module);
 
   bool foundIf = false;
-  module->walk([&](arc::IfOp ifOp) {
-    foundIf = true;
-  });
+  module->walk([&](arc::IfOp ifOp) { foundIf = true; });
   EXPECT_TRUE(foundIf);
 }
 
 // TC-12: Verify contract attributes and body operations on lowered FuncOp
 TEST(LoweringTest, FuncOpHasContractAttributesAndBody) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     //@ requires: a >= 0 && a <= 1000
     //@ ensures: \result >= 0
     int32_t identity(int32_t a) {
       return a;
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -106,12 +110,14 @@ TEST(LoweringTest, FuncOpHasContractAttributesAndBody) {
 
 // TC-13: Lowering various expression types
 TEST(LoweringTest, LowersSubtraction) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     int32_t sub(int32_t a, int32_t b) {
       return a - b;
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -126,12 +132,14 @@ TEST(LoweringTest, LowersSubtraction) {
 }
 
 TEST(LoweringTest, LowersComparison) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     bool isPositive(int32_t a) {
       return a > 0;
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -146,13 +154,15 @@ TEST(LoweringTest, LowersComparison) {
 }
 
 TEST(LoweringTest, LowersVariableDeclaration) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     int32_t withVar(int32_t a) {
       int32_t x = a + 1;
       return x;
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -170,12 +180,14 @@ TEST(LoweringTest, LowersVariableDeclaration) {
 }
 
 TEST(LoweringTest, LowersFunctionWithoutContracts) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(R"(
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
     int32_t noContract(int32_t a) {
       return a;
     }
-  )", {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 

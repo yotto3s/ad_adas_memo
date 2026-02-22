@@ -18,8 +18,8 @@ struct LocationEntry {
 };
 
 struct WhyMLResult {
-  std::string whymlText;        // The generated WhyML source
-  std::string filePath;         // Path to temporary .mlw file
+  std::string whymlText; // The generated WhyML source
+  std::string filePath;  // Path to temporary .mlw file
   std::map<std::string, LocationEntry> locationMap;
 };
 

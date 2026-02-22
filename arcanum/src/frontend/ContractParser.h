@@ -13,25 +13,36 @@ namespace arcanum {
 
 /// Simple expression AST node for contract expressions.
 enum class ContractExprKind {
-  IntLiteral,     // 42
-  BoolLiteral,    // true, false
-  ParamRef,       // parameter name
-  ResultRef,      // \result
-  BinaryOp,       // a + b, a && b, a < b, etc.
-  UnaryOp,        // !a, -a
+  IntLiteral,  // 42
+  BoolLiteral, // true, false
+  ParamRef,    // parameter name
+  ResultRef,   // \result
+  BinaryOp,    // a + b, a && b, a < b, etc.
+  UnaryOp,     // !a, -a
 };
 
 struct ContractExpr;
 using ContractExprPtr = std::shared_ptr<ContractExpr>;
 
 enum class BinaryOpKind {
-  Add, Sub, Mul, Div, Rem,
-  Lt, Le, Gt, Ge, Eq, Ne,
-  And, Or,
+  Add,
+  Sub,
+  Mul,
+  Div,
+  Rem,
+  Lt,
+  Le,
+  Gt,
+  Ge,
+  Eq,
+  Ne,
+  And,
+  Or,
 };
 
 enum class UnaryOpKind {
-  Not, Neg,
+  Not,
+  Neg,
 };
 
 struct ContractExpr {

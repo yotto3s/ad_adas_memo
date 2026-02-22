@@ -2,6 +2,6 @@
 // CHECK: {{.*}}error:{{.*}}goto{{.*}}
 
 void foo() {
-  label:
+label:
   goto label;
 }

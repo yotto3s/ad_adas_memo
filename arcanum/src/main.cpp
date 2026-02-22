@@ -1,11 +1,11 @@
 #include "DiagnosticTracker.h"
 #include "ExitCodes.h"
+#include "backend/Why3Runner.h"
+#include "backend/WhyMLEmitter.h"
+#include "dialect/Lowering.h"
 #include "frontend/ContractParser.h"
 #include "frontend/SubsetEnforcer.h"
-#include "dialect/Lowering.h"
 #include "passes/Passes.h"
-#include "backend/WhyMLEmitter.h"
-#include "backend/Why3Runner.h"
 #include "report/ReportGenerator.h"
 
 #include "clang/Frontend/FrontendActions.h"
@@ -25,23 +25,17 @@ using namespace clang::tooling;
 
 static cl::OptionCategory arcanumCategory("Arcanum options");
 
-static cl::opt<std::string> mode(
-    "mode",
-    cl::desc("Operating mode (verify)"),
-    cl::init("verify"),
-    cl::cat(arcanumCategory));
+static cl::opt<std::string> mode("mode", cl::desc("Operating mode (verify)"),
+                                 cl::init("verify"), cl::cat(arcanumCategory));
 
-static cl::opt<std::string> why3Path(
-    "why3-path",
-    cl::desc("Path to why3 binary"),
-    cl::init("why3"),
-    cl::cat(arcanumCategory));
+static cl::opt<std::string> why3Path("why3-path",
+                                     cl::desc("Path to why3 binary"),
+                                     cl::init("why3"),
+                                     cl::cat(arcanumCategory));
 
-static cl::opt<int> timeout(
-    "timeout",
-    cl::desc("Per-obligation timeout in seconds"),
-    cl::init(30),
-    cl::cat(arcanumCategory));
+static cl::opt<int> timeout("timeout",
+                            cl::desc("Per-obligation timeout in seconds"),
+                            cl::init(30), cl::cat(arcanumCategory));
 
 int main(int argc, const char** argv) {
   auto expectedParser =
@@ -107,8 +101,7 @@ int main(int argc, const char** argv) {
   // Stage 4: Arc MLIR Lowering
   arcanum::DiagnosticTracker::reset();
   mlir::MLIRContext mlirContext;
-  auto arcModule =
-      arcanum::lowerToArc(mlirContext, astContext, contracts);
+  auto arcModule = arcanum::lowerToArc(mlirContext, astContext, contracts);
   if (!arcModule) {
     llvm::errs() << "error: lowering to Arc MLIR failed\n";
     return arcanum::ExitInternalError;
@@ -128,15 +121,13 @@ int main(int argc, const char** argv) {
   }
 
   // Stage 7: Why3 Runner
-  auto obligations =
-      arcanum::runWhy3(whymlResult->filePath, why3Path, timeout);
+  auto obligations = arcanum::runWhy3(whymlResult->filePath, why3Path, timeout);
 
   // Clean up the temporary .mlw file created by the WhyML emitter.
   llvm::sys::fs::remove(whymlResult->filePath);
 
   // Stage 8: Report Generator
-  auto report =
-      arcanum::generateReport(obligations, whymlResult->locationMap);
+  auto report = arcanum::generateReport(obligations, whymlResult->locationMap);
   llvm::outs() << report.text;
   if (arcanum::DiagnosticTracker::getFallbackCount() > 0) {
     llvm::outs() << "\nWarning: "

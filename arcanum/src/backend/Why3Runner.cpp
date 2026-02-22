@@ -51,8 +51,8 @@ std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
               durStr.data(), durStr.data() + durStr.size(), seconds);
           (void)ptr;
           if (ec == std::errc{}) {
-            result.duration = std::chrono::milliseconds(
-                static_cast<int>(seconds * 1000));
+            result.duration =
+                std::chrono::milliseconds(static_cast<int>(seconds * 1000));
           }
         }
       }
@@ -98,13 +98,13 @@ std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
   }
 
   std::optional<llvm::StringRef> redirects[] = {
-      std::nullopt,                       // stdin
-      llvm::StringRef(outputPath),        // stdout
-      llvm::StringRef(outputPath),        // stderr -> same file
+      std::nullopt,                // stdin
+      llvm::StringRef(outputPath), // stdout
+      llvm::StringRef(outputPath), // stderr -> same file
   };
 
-  int exitCode = llvm::sys::ExecuteAndWait(
-      why3.get(), args, /*Env=*/std::nullopt, redirects);
+  int exitCode = llvm::sys::ExecuteAndWait(why3.get(), args,
+                                           /*Env=*/std::nullopt, redirects);
   (void)exitCode;
 
   // Read output file

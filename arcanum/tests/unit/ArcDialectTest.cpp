@@ -39,8 +39,7 @@ TEST_F(ArcDialectTest, ConstantOpCreation) {
 
   auto i32Type = arc::I32Type::get(&context_);
   auto constOp = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type,
-      builder_->getI32IntegerAttr(42));
+      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(42));
 
   EXPECT_TRUE(constOp);
   module->destroy();
@@ -55,8 +54,8 @@ TEST_F(ArcDialectTest, AddOpCreation) {
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(1));
   auto rhs = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(2));
-  auto addOp = builder_->create<arc::AddOp>(
-      builder_->getUnknownLoc(), i32Type, lhs, rhs);
+  auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), i32Type,
+                                            lhs, rhs);
 
   EXPECT_TRUE(addOp);
   module->destroy();
@@ -72,8 +71,8 @@ TEST_F(ArcDialectTest, SubOpCreation) {
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(5));
   auto rhs = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(3));
-  auto subOp = builder_->create<arc::SubOp>(
-      builder_->getUnknownLoc(), i32Type, lhs, rhs);
+  auto subOp = builder_->create<arc::SubOp>(builder_->getUnknownLoc(), i32Type,
+                                            lhs, rhs);
 
   EXPECT_TRUE(subOp);
   module->destroy();
@@ -88,8 +87,8 @@ TEST_F(ArcDialectTest, MulOpCreation) {
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(4));
   auto rhs = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(7));
-  auto mulOp = builder_->create<arc::MulOp>(
-      builder_->getUnknownLoc(), i32Type, lhs, rhs);
+  auto mulOp = builder_->create<arc::MulOp>(builder_->getUnknownLoc(), i32Type,
+                                            lhs, rhs);
 
   EXPECT_TRUE(mulOp);
   module->destroy();
@@ -104,8 +103,8 @@ TEST_F(ArcDialectTest, DivOpCreation) {
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(10));
   auto rhs = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(2));
-  auto divOp = builder_->create<arc::DivOp>(
-      builder_->getUnknownLoc(), i32Type, lhs, rhs);
+  auto divOp = builder_->create<arc::DivOp>(builder_->getUnknownLoc(), i32Type,
+                                            lhs, rhs);
 
   EXPECT_TRUE(divOp);
   module->destroy();
@@ -120,8 +119,8 @@ TEST_F(ArcDialectTest, RemOpCreation) {
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(10));
   auto rhs = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(3));
-  auto remOp = builder_->create<arc::RemOp>(
-      builder_->getUnknownLoc(), i32Type, lhs, rhs);
+  auto remOp = builder_->create<arc::RemOp>(builder_->getUnknownLoc(), i32Type,
+                                            lhs, rhs);
 
   EXPECT_TRUE(remOp);
   module->destroy();
@@ -137,9 +136,9 @@ TEST_F(ArcDialectTest, CmpOpCreation) {
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(1));
   auto rhs = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(2));
-  auto cmpOp = builder_->create<arc::CmpOp>(
-      builder_->getUnknownLoc(), boolType,
-      builder_->getStringAttr("lt"), lhs, rhs);
+  auto cmpOp =
+      builder_->create<arc::CmpOp>(builder_->getUnknownLoc(), boolType,
+                                   builder_->getStringAttr("lt"), lhs, rhs);
 
   EXPECT_TRUE(cmpOp);
   module->destroy();
@@ -155,16 +154,16 @@ TEST_F(ArcDialectTest, AndOrNotOpCreation) {
   auto f = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), boolType, builder_->getBoolAttr(false));
 
-  auto andOp = builder_->create<arc::AndOp>(
-      builder_->getUnknownLoc(), boolType, t, f);
+  auto andOp =
+      builder_->create<arc::AndOp>(builder_->getUnknownLoc(), boolType, t, f);
   EXPECT_TRUE(andOp);
 
-  auto orOp = builder_->create<arc::OrOp>(
-      builder_->getUnknownLoc(), boolType, t, f);
+  auto orOp =
+      builder_->create<arc::OrOp>(builder_->getUnknownLoc(), boolType, t, f);
   EXPECT_TRUE(orOp);
 
-  auto notOp = builder_->create<arc::NotOp>(
-      builder_->getUnknownLoc(), boolType, t);
+  auto notOp =
+      builder_->create<arc::NotOp>(builder_->getUnknownLoc(), boolType, t);
   EXPECT_TRUE(notOp);
 
   module->destroy();
@@ -177,8 +176,8 @@ TEST_F(ArcDialectTest, ReturnOpCreation) {
   auto i32Type = arc::I32Type::get(&context_);
   auto val = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(42));
-  auto retOp = builder_->create<arc::ReturnOp>(
-      builder_->getUnknownLoc(), val.getResult());
+  auto retOp = builder_->create<arc::ReturnOp>(builder_->getUnknownLoc(),
+                                               val.getResult());
 
   EXPECT_TRUE(retOp);
   module->destroy();
@@ -191,8 +190,8 @@ TEST_F(ArcDialectTest, VarOpCreation) {
   auto i32Type = arc::I32Type::get(&context_);
   auto init = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(0));
-  auto varOp = builder_->create<arc::VarOp>(
-      builder_->getUnknownLoc(), i32Type, "x", init.getResult());
+  auto varOp = builder_->create<arc::VarOp>(builder_->getUnknownLoc(), i32Type,
+                                            "x", init.getResult());
 
   EXPECT_TRUE(varOp);
   EXPECT_EQ(varOp.getName(), "x");

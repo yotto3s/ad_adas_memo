@@ -1,10 +1,10 @@
 #include "frontend/SubsetEnforcer.h"
 
-#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/SourceManager.h"
@@ -121,10 +121,13 @@ public:
 private:
   /// Check whether a statement (or any nested statement) contains a return.
   bool containsReturn(const clang::Stmt* stmt) {
-    if (!stmt) return false;
-    if (llvm::isa<clang::ReturnStmt>(stmt)) return true;
+    if (!stmt)
+      return false;
+    if (llvm::isa<clang::ReturnStmt>(stmt))
+      return true;
     for (const auto* child : stmt->children()) {
-      if (containsReturn(child)) return true;
+      if (containsReturn(child))
+        return true;
     }
     return false;
   }
@@ -134,10 +137,10 @@ private:
   /// Returns inside terminal if/else branches (where both branches return)
   /// are fine because they represent structured single-exit.
   bool hasEarlyReturn(const clang::Stmt* stmt) {
-    if (!stmt) return false;
+    if (!stmt)
+      return false;
     if (const auto* compound = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
-      for (auto it = compound->body_begin(); it != compound->body_end();
-           ++it) {
+      for (auto it = compound->body_begin(); it != compound->body_end(); ++it) {
         bool isLast = (std::next(it) == compound->body_end());
         // A bare return statement followed by more statements
         if (llvm::isa<clang::ReturnStmt>(*it) && !isLast) {
@@ -158,15 +161,16 @@ private:
       }
     } else {
       for (const auto* child : stmt->children()) {
-        if (hasEarlyReturn(child)) return true;
+        if (hasEarlyReturn(child))
+          return true;
       }
     }
     return false;
   }
 
-  bool callsSelf(const clang::FunctionDecl* funcDecl,
-                 const clang::Stmt* stmt) {
-    if (!stmt) return false;
+  bool callsSelf(const clang::FunctionDecl* funcDecl, const clang::Stmt* stmt) {
+    if (!stmt)
+      return false;
     if (const auto* call = llvm::dyn_cast<clang::CallExpr>(stmt)) {
       if (const auto* callee = call->getDirectCallee()) {
         if (callee->getCanonicalDecl() == funcDecl->getCanonicalDecl()) {
@@ -175,7 +179,8 @@ private:
       }
     }
     for (const auto* child : stmt->children()) {
-      if (callsSelf(funcDecl, child)) return true;
+      if (callsSelf(funcDecl, child))
+        return true;
     }
     return false;
   }
@@ -223,9 +228,9 @@ private:
     if (loc.isValid()) {
       auto presumed = sm.getPresumedLoc(loc);
       if (presumed.isValid()) {
-        result_.diagnostics.push_back(
-            std::string(presumed.getFilename()) + ":" +
-            std::to_string(presumed.getLine()) + ": error: " + msg);
+        result_.diagnostics.push_back(std::string(presumed.getFilename()) +
+                                      ":" + std::to_string(presumed.getLine()) +
+                                      ": error: " + msg);
         return;
       }
     }
