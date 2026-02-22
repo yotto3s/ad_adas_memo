@@ -5,7 +5,6 @@
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
-#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 
 #include "mlir/IR/Builders.h"
@@ -84,13 +83,13 @@ private:
       // Serialize contract expressions as string attributes for Slice 1.
       // Future slices will use structured MLIR attributes.
       std::string reqStr, ensStr;
-      for (size_t i = 0; i < it->second.requires.size(); ++i) {
+      for (size_t i = 0; i < it->second.preconditions.size(); ++i) {
         if (i > 0) reqStr += " && ";
-        reqStr += serializeExpr(it->second.requires[i]);
+        reqStr += serializeExpr(it->second.preconditions[i]);
       }
-      for (size_t i = 0; i < it->second.ensures.size(); ++i) {
+      for (size_t i = 0; i < it->second.postconditions.size(); ++i) {
         if (i > 0) ensStr += " && ";
-        ensStr += serializeExpr(it->second.ensures[i]);
+        ensStr += serializeExpr(it->second.postconditions[i]);
       }
       if (!reqStr.empty()) {
         requiresAttr = builder_.getStringAttr(reqStr);
