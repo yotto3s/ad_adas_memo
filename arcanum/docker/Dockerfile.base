@@ -5,6 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install essential development tools
 RUN apt-get update && apt-get install -y \
     build-essential \
+    ccache \
     cmake \
     wget \
     flex \
@@ -13,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     gdb \
     git \
+    lcov \
     sudo \
     lsb-release \
     software-properties-common \
