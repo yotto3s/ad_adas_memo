@@ -1,0 +1,35 @@
+ARG BASE_IMAGE=ghcr.io/yotto3s/arcanum-base:latest
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Entrypoint dependency + essential tools
+RUN apt-get update && apt-get install -y \
+    gosu \
+    curl \
+    jq \
+    libnotify-bin \
+    ripgrep \
+    strace \
+    valgrind \
+    nano \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Claude Code (official standalone installer)
+RUN curl -fsSL https://claude.ai/install.sh | bash -s latest \
+    && cp -L /root/.local/bin/claude /usr/local/bin/claude \
+    && rm -rf /root/.local/bin/claude /root/.claude
+
+# gh CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y gh \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Entrypoint
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["entrypoint.sh"]
+CMD ["/bin/bash"]
