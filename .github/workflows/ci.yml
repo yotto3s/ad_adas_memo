@@ -10,26 +10,12 @@ jobs:
   build-and-test:
     runs-on: ubuntu-24.04
     name: Build and Test
+    container:
+      image: ghcr.io/yotto3s/arcanum-base:latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install LLVM 21 and MLIR
-        run: |
-          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21 all
-          sudo apt-get install -y libmlir-21-dev mlir-21-tools
-          echo "/usr/lib/llvm-21/lib" | sudo tee /etc/ld.so.conf.d/llvm-21.conf
-          sudo ldconfig
-
-      - name: Install Why3 and Z3
-        run: |
-          sudo apt-get install -y opam z3
-          opam init --disable-sandboxing --yes
-          eval $(opam env)
-          opam install why3 --yes
-          sudo cp $(opam var bin)/why3 /usr/local/bin/why3
-          why3 config detect
 
       - name: Configure
         run: |
