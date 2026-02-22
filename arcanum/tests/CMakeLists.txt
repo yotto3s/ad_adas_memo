@@ -26,7 +26,7 @@ target_include_directories(SubsetEnforcerTest SYSTEM PRIVATE
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
 target_include_directories(SubsetEnforcerTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
 )
 target_link_libraries(SubsetEnforcerTest PRIVATE
   ArcanumFrontend
@@ -42,7 +42,7 @@ target_include_directories(ContractParserTest SYSTEM PRIVATE
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
 target_include_directories(ContractParserTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
 )
 target_link_libraries(ContractParserTest PRIVATE
   ArcanumFrontend
@@ -58,8 +58,8 @@ target_include_directories(ArcDialectTest SYSTEM PRIVATE
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
 target_include_directories(ArcDialectTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
 )
 target_link_libraries(ArcDialectTest PRIVATE
   ArcDialect
@@ -76,8 +76,8 @@ target_include_directories(LoweringTest SYSTEM PRIVATE
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
 target_include_directories(LoweringTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
 )
 target_link_libraries(LoweringTest PRIVATE
   ArcanumLowering
@@ -97,8 +97,8 @@ target_include_directories(WhyMLEmitterTest SYSTEM PRIVATE
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
 target_include_directories(WhyMLEmitterTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
 )
 target_link_libraries(WhyMLEmitterTest PRIVATE
   ArcanumBackend
@@ -118,7 +118,7 @@ target_include_directories(Why3RunnerTest SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
 )
 target_include_directories(Why3RunnerTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
 )
 target_link_libraries(Why3RunnerTest PRIVATE
   ArcanumBackend
@@ -134,8 +134,8 @@ target_include_directories(ReportGeneratorTest SYSTEM PRIVATE
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
 target_include_directories(ReportGeneratorTest PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
 )
 target_link_libraries(ReportGeneratorTest PRIVATE
   ArcanumReport

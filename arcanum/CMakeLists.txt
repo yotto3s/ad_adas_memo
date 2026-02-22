@@ -49,8 +49,8 @@ set(ARCANUM_LLVM_INCLUDE_DIRS ${LLVM_INCLUDE_DIRS})
 set(ARCANUM_MLIR_INCLUDE_DIRS ${MLIR_INCLUDE_DIRS})
 
 # Project include directories (for TableGen outputs and dialect headers)
-include_directories(${PROJECT_SOURCE_DIR}/src)
-include_directories(${PROJECT_BINARY_DIR}/src)
+include_directories(${PROJECT_SOURCE_DIR}/include)
+include_directories(${PROJECT_BINARY_DIR}/include)
 
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
@@ -67,20 +67,20 @@ set(ARCANUM_CLANG_INCLUDE_DIRS ${CLANG_INCLUDE_DIRS})
 # headers (which cause cxxabi.h conflicts with GCC).
 set_property(DIRECTORY APPEND PROPERTY INCLUDE_DIRECTORIES
   ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/src/dialect)
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/arcanum/dialect)
 
 # Generate dialect declarations/definitions from ArcOps.td
-set(LLVM_TARGET_DEFINITIONS src/dialect/ArcOps.td)
-mlir_tablegen(src/dialect/ArcOps.h.inc -gen-op-decls)
-mlir_tablegen(src/dialect/ArcOps.cpp.inc -gen-op-defs)
-mlir_tablegen(src/dialect/ArcDialect.h.inc -gen-dialect-decls)
-mlir_tablegen(src/dialect/ArcDialect.cpp.inc -gen-dialect-defs)
+set(LLVM_TARGET_DEFINITIONS include/arcanum/dialect/ArcOps.td)
+mlir_tablegen(include/arcanum/dialect/ArcOps.h.inc -gen-op-decls)
+mlir_tablegen(include/arcanum/dialect/ArcOps.cpp.inc -gen-op-defs)
+mlir_tablegen(include/arcanum/dialect/ArcDialect.h.inc -gen-dialect-decls)
+mlir_tablegen(include/arcanum/dialect/ArcDialect.cpp.inc -gen-dialect-defs)
 add_public_tablegen_target(ArcOpsIncGen)
 
 # Generate type declarations/definitions from ArcTypes.td
-set(LLVM_TARGET_DEFINITIONS src/dialect/ArcTypes.td)
-mlir_tablegen(src/dialect/ArcTypes.h.inc -gen-typedef-decls)
-mlir_tablegen(src/dialect/ArcTypes.cpp.inc -gen-typedef-defs)
+set(LLVM_TARGET_DEFINITIONS include/arcanum/dialect/ArcTypes.td)
+mlir_tablegen(include/arcanum/dialect/ArcTypes.h.inc -gen-typedef-decls)
+mlir_tablegen(include/arcanum/dialect/ArcTypes.cpp.inc -gen-typedef-defs)
 add_public_tablegen_target(ArcTypesIncGen)
 
 # Remove LLVM/MLIR includes from directory property after TableGen is done.
@@ -91,12 +91,12 @@ set_property(DIRECTORY PROPERTY INCLUDE_DIRECTORIES ${_current_includes})
 
 # --- Arc dialect library ---
 add_mlir_dialect_library(ArcDialect
-  src/dialect/ArcDialect.cpp
-  src/dialect/ArcOps.cpp
-  src/dialect/ArcTypes.cpp
+  lib/dialect/ArcDialect.cpp
+  lib/dialect/ArcOps.cpp
+  lib/dialect/ArcTypes.cpp
 
   ADDITIONAL_HEADER_DIRS
-  ${PROJECT_SOURCE_DIR}/src/dialect
+  ${PROJECT_SOURCE_DIR}/include/arcanum/dialect
 
   DEPENDS
   ArcOpsIncGen
@@ -115,15 +115,15 @@ target_include_directories(ArcDialect SYSTEM PUBLIC
 
 # --- Frontend library (SubsetEnforcer + ContractParser) ---
 add_library(ArcanumFrontend
-  src/frontend/SubsetEnforcer.cpp
-  src/frontend/ContractParser.cpp
+  lib/frontend/SubsetEnforcer.cpp
+  lib/frontend/ContractParser.cpp
 )
 target_include_directories(ArcanumFrontend SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumFrontend PUBLIC
-  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
 )
 target_link_libraries(ArcanumFrontend PUBLIC
   clangAST
@@ -135,7 +135,7 @@ target_link_libraries(ArcanumFrontend PUBLIC
 
 # --- Lowering library ---
 add_library(ArcanumLowering
-  src/dialect/Lowering.cpp
+  lib/dialect/Lowering.cpp
 )
 target_include_directories(ArcanumLowering SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
@@ -143,8 +143,8 @@ target_include_directories(ArcanumLowering SYSTEM PUBLIC
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumLowering PUBLIC
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
 )
 target_link_libraries(ArcanumLowering PUBLIC
   ArcDialect
@@ -154,15 +154,15 @@ target_link_libraries(ArcanumLowering PUBLIC
 
 # --- Passes library ---
 add_library(ArcanumPasses
-  src/passes/Passes.cpp
+  lib/passes/Passes.cpp
 )
 target_include_directories(ArcanumPasses SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumPasses PUBLIC
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
 )
 target_link_libraries(ArcanumPasses PUBLIC
   ArcDialect
@@ -172,16 +172,16 @@ target_link_libraries(ArcanumPasses PUBLIC
 
 # --- Backend library (WhyMLEmitter + Why3Runner) ---
 add_library(ArcanumBackend
-  src/backend/WhyMLEmitter.cpp
-  src/backend/Why3Runner.cpp
+  lib/backend/WhyMLEmitter.cpp
+  lib/backend/Why3Runner.cpp
 )
 target_include_directories(ArcanumBackend SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumBackend PUBLIC
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
 )
 target_link_libraries(ArcanumBackend PUBLIC
   ArcDialect
@@ -191,29 +191,29 @@ target_link_libraries(ArcanumBackend PUBLIC
 
 # --- Report library ---
 add_library(ArcanumReport
-  src/report/ReportGenerator.cpp
+  lib/report/ReportGenerator.cpp
 )
 target_include_directories(ArcanumReport SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumReport PUBLIC
-  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
 )
 target_link_libraries(ArcanumReport PUBLIC
   LLVMSupport
 )
 
 # --- CLI executable ---
-add_executable(arcanum src/main.cpp)
+add_executable(arcanum tools/arcanum/main.cpp)
 target_include_directories(arcanum SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
 target_include_directories(arcanum PRIVATE
-  ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_BINARY_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
 )
 target_link_libraries(arcanum PRIVATE
   ArcanumFrontend
@@ -236,6 +236,44 @@ target_link_libraries(arcanum PRIVATE
   LLVMSupport
   MLIRIR
   MLIRPass
+)
+
+# --- Install & Export ---
+# Public headers
+install(DIRECTORY include/arcanum
+  DESTINATION include
+  FILES_MATCHING PATTERN "*.h" PATTERN "*.td"
+)
+
+# Generated .inc files
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/arcanum/dialect
+  DESTINATION include/arcanum
+  FILES_MATCHING PATTERN "*.inc"
+)
+
+# Library targets
+install(TARGETS ArcDialect ArcanumPasses ArcanumLowering
+        ArcanumFrontend ArcanumBackend ArcanumReport
+  EXPORT ArcanumTargets
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+)
+
+# CMake package export
+install(EXPORT ArcanumTargets
+  NAMESPACE Arcanum::
+  DESTINATION lib/cmake/Arcanum
+)
+
+# Package config file
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+  cmake/ArcanumConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/ArcanumConfig.cmake
+  INSTALL_DESTINATION lib/cmake/Arcanum
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ArcanumConfig.cmake
+  DESTINATION lib/cmake/Arcanum
 )
 
 # --- Testing ---
