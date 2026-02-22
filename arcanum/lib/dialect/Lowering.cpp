@@ -1,8 +1,8 @@
-#include "dialect/Lowering.h"
-#include "DiagnosticTracker.h"
-#include "dialect/ArcDialect.h"
-#include "dialect/ArcOps.h"
-#include "dialect/ArcTypes.h"
+#include "arcanum/dialect/Lowering.h"
+#include "arcanum/DiagnosticTracker.h"
+#include "arcanum/dialect/ArcDialect.h"
+#include "arcanum/dialect/ArcOps.h"
+#include "arcanum/dialect/ArcTypes.h"
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"

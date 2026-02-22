@@ -1,7 +1,7 @@
-#include "backend/WhyMLEmitter.h"
-#include "dialect/ArcDialect.h"
-#include "dialect/ArcOps.h"
-#include "dialect/ArcTypes.h"
+#include "arcanum/backend/WhyMLEmitter.h"
+#include "arcanum/dialect/ArcDialect.h"
+#include "arcanum/dialect/ArcOps.h"
+#include "arcanum/dialect/ArcTypes.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Location.h"

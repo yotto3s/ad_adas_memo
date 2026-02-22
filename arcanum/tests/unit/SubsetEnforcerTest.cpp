@@ -1,4 +1,4 @@
-#include "frontend/SubsetEnforcer.h"
+#include "arcanum/frontend/SubsetEnforcer.h"
 
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/Tooling.h"

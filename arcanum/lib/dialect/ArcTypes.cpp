@@ -1,5 +1,5 @@
-#include "dialect/ArcTypes.h"
-#include "dialect/ArcDialect.h"
+#include "arcanum/dialect/ArcTypes.h"
+#include "arcanum/dialect/ArcDialect.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -8,11 +8,11 @@
 using namespace arcanum::arc;
 
 #define GET_TYPEDEF_CLASSES
-#include "dialect/ArcTypes.cpp.inc"
+#include "arcanum/dialect/ArcTypes.cpp.inc"
 
 void ArcDialect::registerTypes() {
   addTypes<
 #define GET_TYPEDEF_LIST
-#include "dialect/ArcTypes.cpp.inc"
+#include "arcanum/dialect/ArcTypes.cpp.inc"
       >();
 }

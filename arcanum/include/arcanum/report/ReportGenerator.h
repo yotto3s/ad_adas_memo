@@ -1,8 +1,8 @@
 #ifndef ARCANUM_REPORT_REPORTGENERATOR_H
 #define ARCANUM_REPORT_REPORTGENERATOR_H
 
-#include "backend/Why3Runner.h"
-#include "backend/WhyMLEmitter.h"
+#include "arcanum/backend/Why3Runner.h"
+#include "arcanum/backend/WhyMLEmitter.h"
 
 #include <map>
 #include <string>

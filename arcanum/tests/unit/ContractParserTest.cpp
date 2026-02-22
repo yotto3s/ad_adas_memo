@@ -1,4 +1,4 @@
-#include "frontend/ContractParser.h"
+#include "arcanum/frontend/ContractParser.h"
 
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/Tooling.h"

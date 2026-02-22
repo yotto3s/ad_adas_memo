@@ -1,4 +1,4 @@
-#include "report/ReportGenerator.h"
+#include "arcanum/report/ReportGenerator.h"
 
 #include <chrono>
 #include <sstream>

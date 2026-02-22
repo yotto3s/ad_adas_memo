@@ -1,6 +1,6 @@
-#include "dialect/ArcDialect.h"
-#include "dialect/ArcOps.h"
-#include "dialect/ArcTypes.h"
+#include "arcanum/dialect/ArcDialect.h"
+#include "arcanum/dialect/ArcOps.h"
+#include "arcanum/dialect/ArcTypes.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"

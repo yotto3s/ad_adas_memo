@@ -1,7 +1,7 @@
-#include "dialect/Lowering.h"
-#include "dialect/ArcDialect.h"
-#include "dialect/ArcOps.h"
-#include "frontend/ContractParser.h"
+#include "arcanum/dialect/Lowering.h"
+#include "arcanum/dialect/ArcDialect.h"
+#include "arcanum/dialect/ArcOps.h"
+#include "arcanum/frontend/ContractParser.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"

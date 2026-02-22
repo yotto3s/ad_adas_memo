@@ -8,7 +8,7 @@
 #define ARC_TYPES_TD
 
 include "mlir/IR/AttrTypeBase.td"
-include "dialect/ArcDialect.td"
+include "arcanum/dialect/ArcDialect.td"
 
 //===----------------------------------------------------------------------===//
 // Arc type definitions

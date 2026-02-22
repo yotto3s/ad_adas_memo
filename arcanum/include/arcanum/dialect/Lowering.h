@@ -1,7 +1,7 @@
 #ifndef ARCANUM_DIALECT_LOWERING_H
 #define ARCANUM_DIALECT_LOWERING_H
 
-#include "frontend/ContractParser.h"
+#include "arcanum/frontend/ContractParser.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "clang/AST/ASTContext.h"

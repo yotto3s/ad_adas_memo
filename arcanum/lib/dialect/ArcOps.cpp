@@ -1,4 +1,4 @@
-#include "dialect/ArcOps.h"
+#include "arcanum/dialect/ArcOps.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
@@ -6,7 +6,7 @@
 using namespace arcanum::arc;
 
 #define GET_OP_CLASSES
-#include "dialect/ArcOps.cpp.inc"
+#include "arcanum/dialect/ArcOps.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Helper for binary op custom assembly (print/parse)

@@ -1,4 +1,4 @@
-#include "frontend/ContractParser.h"
+#include "arcanum/frontend/ContractParser.h"
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Comment.h"

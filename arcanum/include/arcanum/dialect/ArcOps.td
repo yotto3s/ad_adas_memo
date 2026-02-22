@@ -7,8 +7,8 @@
 #ifndef ARC_OPS_TD
 #define ARC_OPS_TD
 
-include "dialect/ArcDialect.td"
-include "dialect/ArcTypes.td"
+include "arcanum/dialect/ArcDialect.td"
+include "arcanum/dialect/ArcTypes.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"

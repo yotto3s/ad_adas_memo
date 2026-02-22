@@ -1,4 +1,4 @@
-#include "passes/Passes.h"
+#include "arcanum/passes/Passes.h"
 
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/PassManager.h"
