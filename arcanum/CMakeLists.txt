@@ -123,7 +123,8 @@ target_include_directories(ArcanumFrontend SYSTEM PUBLIC
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumFrontend PUBLIC
-  ${PROJECT_SOURCE_DIR}/include
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(ArcanumFrontend PUBLIC
   clangAST
@@ -143,8 +144,9 @@ target_include_directories(ArcanumLowering SYSTEM PUBLIC
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumLowering PUBLIC
-  ${PROJECT_SOURCE_DIR}/include
-  ${PROJECT_BINARY_DIR}/include
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(ArcanumLowering PUBLIC
   ArcDialect
@@ -161,8 +163,9 @@ target_include_directories(ArcanumPasses SYSTEM PUBLIC
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumPasses PUBLIC
-  ${PROJECT_SOURCE_DIR}/include
-  ${PROJECT_BINARY_DIR}/include
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(ArcanumPasses PUBLIC
   ArcDialect
@@ -180,8 +183,9 @@ target_include_directories(ArcanumBackend SYSTEM PUBLIC
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumBackend PUBLIC
-  ${PROJECT_SOURCE_DIR}/include
-  ${PROJECT_BINARY_DIR}/include
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(ArcanumBackend PUBLIC
   ArcDialect
@@ -198,7 +202,8 @@ target_include_directories(ArcanumReport SYSTEM PUBLIC
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
 target_include_directories(ArcanumReport PUBLIC
-  ${PROJECT_SOURCE_DIR}/include
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(ArcanumReport PUBLIC
   LLVMSupport
