@@ -101,12 +101,12 @@ private:
     auto lhs = parseAnd();
     if (!lhs) {
       return nullptr;
-}
+    }
     while (matchString("||")) {
       auto rhs = parseAnd();
       if (!rhs) {
         return nullptr;
-}
+      }
       lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Or, lhs, rhs);
     }
     return lhs;
@@ -116,12 +116,12 @@ private:
     auto lhs = parseComparison();
     if (!lhs) {
       return nullptr;
-}
+    }
     while (matchString("&&")) {
       auto rhs = parseComparison();
       if (!rhs) {
         return nullptr;
-}
+      }
       lhs = ContractExpr::makeBinaryOp(BinaryOpKind::And, lhs, rhs);
     }
     return lhs;
@@ -131,48 +131,48 @@ private:
     auto lhs = parseAddSub();
     if (!lhs) {
       return nullptr;
-}
+    }
     skipWhitespace();
     if (matchString("<=")) {
       auto rhs = parseAddSub();
       if (!rhs) {
         return nullptr;
-}
+      }
       return ContractExpr::makeBinaryOp(BinaryOpKind::Le, lhs, rhs);
     }
     if (matchString(">=")) {
       auto rhs = parseAddSub();
       if (!rhs) {
         return nullptr;
-}
+      }
       return ContractExpr::makeBinaryOp(BinaryOpKind::Ge, lhs, rhs);
     }
     if (matchString("==")) {
       auto rhs = parseAddSub();
       if (!rhs) {
         return nullptr;
-}
+      }
       return ContractExpr::makeBinaryOp(BinaryOpKind::Eq, lhs, rhs);
     }
     if (matchString("!=")) {
       auto rhs = parseAddSub();
       if (!rhs) {
         return nullptr;
-}
+      }
       return ContractExpr::makeBinaryOp(BinaryOpKind::Ne, lhs, rhs);
     }
     if (matchString("<")) {
       auto rhs = parseAddSub();
       if (!rhs) {
         return nullptr;
-}
+      }
       return ContractExpr::makeBinaryOp(BinaryOpKind::Lt, lhs, rhs);
     }
     if (matchString(">")) {
       auto rhs = parseAddSub();
       if (!rhs) {
         return nullptr;
-}
+      }
       return ContractExpr::makeBinaryOp(BinaryOpKind::Gt, lhs, rhs);
     }
     return lhs;
@@ -182,20 +182,20 @@ private:
     auto lhs = parseMulDiv();
     if (!lhs) {
       return nullptr;
-}
+    }
     skipWhitespace();
     while (true) {
       if (matchString("+")) {
         auto rhs = parseMulDiv();
         if (!rhs) {
           return nullptr;
-}
+        }
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Add, lhs, rhs);
       } else if (matchString("-")) {
         auto rhs = parseMulDiv();
         if (!rhs) {
           return nullptr;
-}
+        }
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Sub, lhs, rhs);
       } else {
         break;
@@ -208,26 +208,26 @@ private:
     auto lhs = parseUnary();
     if (!lhs) {
       return nullptr;
-}
+    }
     skipWhitespace();
     while (true) {
       if (matchString("*")) {
         auto rhs = parseUnary();
         if (!rhs) {
           return nullptr;
-}
+        }
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Mul, lhs, rhs);
       } else if (matchString("/")) {
         auto rhs = parseUnary();
         if (!rhs) {
           return nullptr;
-}
+        }
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Div, lhs, rhs);
       } else if (matchString("%")) {
         auto rhs = parseUnary();
         if (!rhs) {
           return nullptr;
-}
+        }
         lhs = ContractExpr::makeBinaryOp(BinaryOpKind::Rem, lhs, rhs);
       } else {
         break;
@@ -242,14 +242,14 @@ private:
       auto operand = parseUnary();
       if (!operand) {
         return nullptr;
-}
+      }
       return ContractExpr::makeUnaryOp(UnaryOpKind::Not, operand);
     }
     if (matchString("-")) {
       auto operand = parsePrimary();
       if (!operand) {
         return nullptr;
-}
+      }
       return ContractExpr::makeUnaryOp(UnaryOpKind::Neg, operand);
     }
     return parsePrimary();
@@ -304,8 +304,7 @@ private:
               text[pos] == '_')) {
         ++pos;
       }
-      return ContractExpr::makeParamRef(
-          text.substr(start, pos - start).str());
+      return ContractExpr::makeParamRef(text.substr(start, pos - start).str());
     }
     // Fallback: unrecognized token
     return nullptr;
@@ -318,7 +317,8 @@ private:
 /// Extract //@ lines from a raw comment block and return them.
 std::vector<std::string> extractAnnotationLines(llvm::StringRef commentText) {
   std::vector<std::string> lines;
-  llvm::SmallVector<llvm::StringRef, 8> splitLines; // NOLINT(readability-magic-numbers)
+  llvm::SmallVector<llvm::StringRef, 8>
+      splitLines; // NOLINT(readability-magic-numbers)
   commentText.split(splitLines, '\n');
 
   for (auto& line : splitLines) {

@@ -47,7 +47,8 @@ std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
       }
 
       // Parse duration if present (e.g., "0.01s, 0 steps")
-      if (match.size() > DETAIL_GROUP_INDEX && match[DETAIL_GROUP_INDEX].matched) {
+      if (match.size() > DETAIL_GROUP_INDEX &&
+          match[DETAIL_GROUP_INDEX].matched) {
         std::regex durationRegex(R"(([\d.]+)s)");
         std::smatch durMatch;
         auto detailStr = match[DETAIL_GROUP_INDEX].str();
@@ -58,8 +59,8 @@ std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
               durStr.data(), durStr.data() + durStr.size(), seconds);
           (void)ptr;
           if (ec == std::errc{}) {
-            result.duration =
-                std::chrono::milliseconds(static_cast<int>(seconds * MS_PER_SECOND));
+            result.duration = std::chrono::milliseconds(
+                static_cast<int>(seconds * MS_PER_SECOND));
           }
         }
       }
@@ -104,7 +105,8 @@ std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
     return {err};
   }
 
-  std::array<std::optional<llvm::StringRef>, 3> redirects = { // NOLINT(readability-magic-numbers)
+  std::array<std::optional<llvm::StringRef>, 3> redirects = {
+      // NOLINT(readability-magic-numbers)
       std::nullopt,                // stdin
       llvm::StringRef(outputPath), // stdout
       llvm::StringRef(outputPath), // stderr -> same file

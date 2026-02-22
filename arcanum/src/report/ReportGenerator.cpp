@@ -34,7 +34,8 @@ Report generateReport(const std::vector<ObligationResult>& obligations,
   std::ostringstream out;
 
   constexpr double MS_PER_SECOND = 1000.0;
-  double totalSeconds = static_cast<double>(totalDuration.count()) / MS_PER_SECOND;
+  double totalSeconds =
+      static_cast<double>(totalDuration.count()) / MS_PER_SECOND;
 
   // Per-function report line
   if (totalCount > 0) {

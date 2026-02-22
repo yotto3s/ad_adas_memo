@@ -168,18 +168,18 @@ private:
     for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
       if (mlir::isa<arc::BoolType>(entryBlock.getArgument(i).getType())) {
         needsBool = true;
-}
+      }
     }
     if (funcType.getNumResults() > 0 &&
         mlir::isa<arc::BoolType>(funcType.getResult(0))) {
       needsBool = true;
-}
+    }
 
     out << "module " << moduleName << "\n";
     out << "  use int.Int\n";
     if (needsBool) {
       out << "  use bool.Bool\n";
-}
+    }
     out << "\n";
 
     // Function signature
@@ -198,7 +198,7 @@ private:
     std::string resultType = "int";
     if (funcType.getNumResults() > 0) {
       resultType = toWhyMLType(funcType.getResult(0));
-}
+    }
     out << ": " << resultType << "\n";
 
     // Requires clauses

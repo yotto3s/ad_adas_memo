@@ -30,9 +30,9 @@ struct ObligationResult {
 
 /// Run Why3 on a .mlw file with the given solver and timeout.
 /// Returns per-obligation results parsed from Why3 stdout.
-std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
-                                      const std::string& why3Binary = "why3",
-                                      int timeoutSeconds = DEFAULT_TIMEOUT_SECONDS);
+std::vector<ObligationResult>
+runWhy3(const std::string& mlwPath, const std::string& why3Binary = "why3",
+        int timeoutSeconds = DEFAULT_TIMEOUT_SECONDS);
 
 /// Parse Why3 stdout output into obligation results (exposed for testing).
 std::vector<ObligationResult> parseWhy3Output(const std::string& output);

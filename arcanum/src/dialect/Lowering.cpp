@@ -101,13 +101,13 @@ private:
       for (size_t i = 0; i < it->second.preconditions.size(); ++i) {
         if (i > 0) {
           reqStr += " && ";
-}
+        }
         reqStr += serializeExpr(it->second.preconditions[i]);
       }
       for (size_t i = 0; i < it->second.postconditions.size(); ++i) {
         if (i > 0) {
           ensStr += " && ";
-}
+        }
         ensStr += serializeExpr(it->second.postconditions[i]);
       }
       if (!reqStr.empty()) {
@@ -119,15 +119,14 @@ private:
     }
 
     // Create arc.func
-    auto funcOp = builder.create<arc::FuncOp>(
-        loc, builder.getStringAttr(name), mlir::TypeAttr::get(funcType),
-        requiresAttr, ensuresAttr);
+    auto funcOp = builder.create<arc::FuncOp>(loc, builder.getStringAttr(name),
+                                              mlir::TypeAttr::get(funcType),
+                                              requiresAttr, ensuresAttr);
 
     // Store parameter names as an attribute for the WhyML emitter
     llvm::SmallVector<mlir::Attribute> paramNameAttrs;
     for (const auto* param : funcDecl->parameters()) {
-      paramNameAttrs.push_back(
-          builder.getStringAttr(param->getNameAsString()));
+      paramNameAttrs.push_back(builder.getStringAttr(param->getNameAsString()));
     }
     funcOp->setAttr("param_names", builder.getArrayAttr(paramNameAttrs));
 
@@ -166,9 +165,9 @@ private:
           if (varDecl->hasInit()) {
             auto initVal = lowerExpr(varDecl->getInit(), valueMap);
             auto loc = getLoc(varDecl->getLocation());
-            auto varOp = builder.create<arc::VarOp>(
-                loc, getArcType(varDecl->getType()), varDecl->getNameAsString(),
-                initVal);
+            auto varOp =
+                builder.create<arc::VarOp>(loc, getArcType(varDecl->getType()),
+                                           varDecl->getNameAsString(), initVal);
             valueMap[varDecl] = varOp.getResult();
           }
         }
@@ -212,8 +211,9 @@ private:
 
     if (const auto* intLit = llvm::dyn_cast<clang::IntegerLiteral>(expr)) {
       auto val = intLit->getValue().getSExtValue();
-      return builder.create<arc::ConstantOp>(loc, arc::I32Type::get(&mlirCtx),
-                                              builder.getI32IntegerAttr(static_cast<int32_t>(val)));
+      return builder.create<arc::ConstantOp>(
+          loc, arc::I32Type::get(&mlirCtx),
+          builder.getI32IntegerAttr(static_cast<int32_t>(val)));
     }
 
     if (const auto* boolLit = llvm::dyn_cast<clang::CXXBoolLiteralExpr>(expr)) {
@@ -233,7 +233,7 @@ private:
                    << "', using zero fallback\n";
       DiagnosticTracker::recordFallback();
       return builder.create<arc::ConstantOp>(loc, arc::I32Type::get(&mlirCtx),
-                                              builder.getI32IntegerAttr(0));
+                                             builder.getI32IntegerAttr(0));
     }
 
     if (const auto* binOp = llvm::dyn_cast<clang::BinaryOperator>(expr)) {
@@ -253,34 +253,34 @@ private:
         return builder.create<arc::RemOp>(loc, lhs.getType(), lhs, rhs);
       case clang::BO_LT:
         return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                           builder.getStringAttr("lt"), lhs,
-                                           rhs);
+                                          builder.getStringAttr("lt"), lhs,
+                                          rhs);
       case clang::BO_LE:
         return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                           builder.getStringAttr("le"), lhs,
-                                           rhs);
+                                          builder.getStringAttr("le"), lhs,
+                                          rhs);
       case clang::BO_GT:
         return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                           builder.getStringAttr("gt"), lhs,
-                                           rhs);
+                                          builder.getStringAttr("gt"), lhs,
+                                          rhs);
       case clang::BO_GE:
         return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                           builder.getStringAttr("ge"), lhs,
-                                           rhs);
+                                          builder.getStringAttr("ge"), lhs,
+                                          rhs);
       case clang::BO_EQ:
         return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                           builder.getStringAttr("eq"), lhs,
-                                           rhs);
+                                          builder.getStringAttr("eq"), lhs,
+                                          rhs);
       case clang::BO_NE:
         return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                           builder.getStringAttr("ne"), lhs,
-                                           rhs);
+                                          builder.getStringAttr("ne"), lhs,
+                                          rhs);
       case clang::BO_LAnd:
         return builder.create<arc::AndOp>(loc, arc::BoolType::get(&mlirCtx),
-                                           lhs, rhs);
-      case clang::BO_LOr:
-        return builder.create<arc::OrOp>(loc, arc::BoolType::get(&mlirCtx),
                                           lhs, rhs);
+      case clang::BO_LOr:
+        return builder.create<arc::OrOp>(loc, arc::BoolType::get(&mlirCtx), lhs,
+                                         rhs);
       default:
         llvm::errs() << "warning: unhandled binary operator opcode "
                      << binOp->getOpcodeStr() << "\n";
@@ -293,12 +293,12 @@ private:
       switch (unaryOp->getOpcode()) {
       case clang::UO_LNot:
         return builder.create<arc::NotOp>(loc, arc::BoolType::get(&mlirCtx),
-                                           operand);
+                                          operand);
       case clang::UO_Minus: {
         auto zero = builder.create<arc::ConstantOp>(
             loc, arc::I32Type::get(&mlirCtx), builder.getI32IntegerAttr(0));
         return builder.create<arc::SubOp>(loc, operand.getType(), zero,
-                                           operand);
+                                          operand);
       }
       default:
         break;
@@ -310,7 +310,7 @@ private:
                     "fallback\n";
     DiagnosticTracker::recordFallback();
     return builder.create<arc::ConstantOp>(loc, arc::I32Type::get(&mlirCtx),
-                                            builder.getI32IntegerAttr(0));
+                                           builder.getI32IntegerAttr(0));
   }
 
   std::string serializeExpr(const ContractExprPtr& expr) {

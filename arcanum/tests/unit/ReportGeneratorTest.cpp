@@ -68,8 +68,8 @@ TEST(ReportGeneratorTest, EmptyObligations) {
 // TC-23: Mixed obligation statuses
 TEST(ReportGeneratorTest, MixedObligationStatuses) {
   std::vector<ObligationResult> obligations;
-  obligations.push_back(
-      {"overflow'vc", ObligationStatus::Valid, std::chrono::milliseconds(50), ""});
+  obligations.push_back({"overflow'vc", ObligationStatus::Valid,
+                         std::chrono::milliseconds(50), ""});
   obligations.push_back({"postcondition'vc", ObligationStatus::Timeout,
                          std::chrono::milliseconds(30000), ""});
   obligations.push_back({"precondition'vc", ObligationStatus::Unknown,
