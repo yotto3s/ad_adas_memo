@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/arcanum-base
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/arcanum-base:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
+
+    name: Build and Test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cd arcanum
+          cmake --preset default
+
+      - name: Build
+        run: |
+          cd arcanum
+          cmake --build build/default
+
+      - name: Run unit tests
+        run: |
+          cd arcanum
+          ctest --preset default
+
+      - name: Run lit tests
+        run: |
+          cd arcanum
+          cmake --build build/default --target check-arcanum-lit
