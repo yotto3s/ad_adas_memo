@@ -24,9 +24,14 @@ def Arc_Dialect : Dialect {
   }];
   let cppNamespace = "::arcanum::arc";
 
-  let useDefaultTypePrinterParser = 1;
+  let useDefaultTypePrinterParser = 0;
   let extraClassDeclaration = [{
     void registerTypes();
+    /// Custom type parsing to support short mnemonics (!arc.i32, !arc.u8, etc.)
+    ::mlir::Type parseType(::mlir::DialectAsmParser &parser) const override;
+    /// Custom type printing to emit short mnemonics
+    void printType(::mlir::Type type,
+                   ::mlir::DialectAsmPrinter &printer) const override;
   }];
 }
 

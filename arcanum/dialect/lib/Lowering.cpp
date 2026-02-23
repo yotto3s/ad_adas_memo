@@ -93,13 +93,13 @@ private:
       llvm::errs()
           << "warning: void type mapped to i32 in getArcType fallback\n";
       DiagnosticTracker::recordFallback();
-      return arc::I32Type::get(&mlirCtx);
+      return arc::IntType::get(&mlirCtx, 32, true);
     }
     if (canonical->isBooleanType()) {
       return arc::BoolType::get(&mlirCtx);
     }
     // Default to i32 for integer types in Slice 1
-    return arc::I32Type::get(&mlirCtx);
+    return arc::IntType::get(&mlirCtx, 32, true);
   }
 
   void lowerFunction(clang::FunctionDecl* funcDecl) {
@@ -273,7 +273,7 @@ private:
       auto val = intLit->getValue().getSExtValue();
       return builder
           .create<arc::ConstantOp>(
-              loc, arc::I32Type::get(&mlirCtx),
+              loc, arc::IntType::get(&mlirCtx, 32, true),
               builder.getI32IntegerAttr(static_cast<int32_t>(val)))
           .getResult();
     }
@@ -378,7 +378,8 @@ private:
             .getResult();
       case clang::UO_Minus: {
         auto zero = builder.create<arc::ConstantOp>(
-            loc, arc::I32Type::get(&mlirCtx), builder.getI32IntegerAttr(0));
+            loc, arc::IntType::get(&mlirCtx, 32, true),
+            builder.getI32IntegerAttr(0));
         return builder
             .create<arc::SubOp>(loc, operand->getType(), zero, *operand)
             .getResult();

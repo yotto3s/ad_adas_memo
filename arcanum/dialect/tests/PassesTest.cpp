@@ -21,13 +21,13 @@ TEST(PassesTest, SucceedsOnValidModule) {
 
   // Create a valid arc.func
   builder.setInsertionPointToEnd(module.getBody());
-  auto funcType = builder.getFunctionType({arc::I32Type::get(&ctx)},
-                                          {arc::I32Type::get(&ctx)});
+  auto funcType = builder.getFunctionType({arc::IntType::get(&ctx, 32, true)},
+                                          {arc::IntType::get(&ctx, 32, true)});
   auto funcOp = builder.create<arc::FuncOp>(
       builder.getUnknownLoc(), builder.getStringAttr("test_func"),
       mlir::TypeAttr::get(funcType), mlir::StringAttr(), mlir::StringAttr());
   auto& block = funcOp.getBody().emplaceBlock();
-  block.addArgument(arc::I32Type::get(&ctx), builder.getUnknownLoc());
+  block.addArgument(arc::IntType::get(&ctx, 32, true), builder.getUnknownLoc());
 
   auto savedIp = builder.saveInsertionPoint();
   builder.setInsertionPointToEnd(&block);
