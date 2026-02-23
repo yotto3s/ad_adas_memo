@@ -406,7 +406,7 @@ private:
     case ContractExprKind::ResultRef:
       return "\\result";
     case ContractExprKind::BinaryOp: {
-      const auto *op = BINARY_OP_STRINGS[static_cast<size_t>(expr->binaryOp)];
+      const auto* op = BINARY_OP_STRINGS[static_cast<size_t>(expr->binaryOp)];
       return "(" + serializeExpr(expr->left) + " " + op + " " +
              serializeExpr(expr->right) + ")";
     }

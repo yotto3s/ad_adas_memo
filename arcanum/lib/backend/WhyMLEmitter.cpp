@@ -374,7 +374,7 @@ private:
       // Acceptable for Slice 1 with small functions; future slices should
       // consider a direct VarOp lookup map to avoid quadratic behavior.
       std::string varName;
-      if (auto *defOp = assignOp.getTarget().getDefiningOp()) {
+      if (auto* defOp = assignOp.getTarget().getDefiningOp()) {
         if (auto varOp = llvm::dyn_cast<arc::VarOp>(defOp)) {
           varName = varOp.getName().str();
         }
