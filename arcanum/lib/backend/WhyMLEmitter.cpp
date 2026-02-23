@@ -278,22 +278,23 @@ private:
     auto lhs = getExpr(lhsVal, nameMap);
     auto rhs = getExpr(rhsVal, nameMap);
     auto expr = "(" + lhs + " " + whymlOp + " " + rhs + ")";
-    out << "    assert { " << INT32_MIN_STR.data() << " <= " << expr
-        << " /\\ " << expr << " <= " << INT32_MAX_STR.data() << " };\n";
+    out << "    assert { " << INT32_MIN_STR.data() << " <= " << expr << " /\\ "
+        << expr << " <= " << INT32_MAX_STR.data() << " };\n";
     nameMap[result] = expr;
   }
 
   /// Emit a division-like op with divisor-not-zero and overflow assertions.
   void emitDivLikeOp(mlir::Value result, mlir::Value lhsVal, mlir::Value rhsVal,
-                     const std::string& whymlFunc, llvm::raw_string_ostream& out,
+                     const std::string& whymlFunc,
+                     llvm::raw_string_ostream& out,
                      llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto lhs = getExpr(lhsVal, nameMap);
     auto rhs = getExpr(rhsVal, nameMap);
     auto expr = "(" + whymlFunc + " " + lhs + " " + rhs + ")";
     out << "    assert { " << rhs << " <> 0 };\n";
     // Overflow check: INT_MIN / -1 overflows in C (undefined behavior)
-    out << "    assert { " << INT32_MIN_STR.data() << " <= " << expr
-        << " /\\ " << expr << " <= " << INT32_MAX_STR.data() << " };\n";
+    out << "    assert { " << INT32_MIN_STR.data() << " <= " << expr << " /\\ "
+        << expr << " <= " << INT32_MAX_STR.data() << " };\n";
     nameMap[result] = expr;
   }
 
@@ -373,7 +374,7 @@ private:
       // Acceptable for Slice 1 with small functions; future slices should
       // consider a direct VarOp lookup map to avoid quadratic behavior.
       std::string varName;
-      if (auto defOp = assignOp.getTarget().getDefiningOp()) {
+      if (auto *defOp = assignOp.getTarget().getDefiningOp()) {
         if (auto varOp = llvm::dyn_cast<arc::VarOp>(defOp)) {
           varName = varOp.getName().str();
         }

@@ -37,12 +37,12 @@ parseWhy3Output(const std::string& output,
   // Match lines like: "    Goal <name>. Valid (0.01s, 0 steps)."
   // or: "    Goal <name>. Timeout."
   // or: "    Goal <name>. Unknown ("reason")."
-  static const std::regex goalRegex(
+  static const std::regex GOAL_REGEX(
       R"(Goal\s+(\S+)\.\s+(Valid|Timeout|Unknown)(?:\s+\(([^)]*)\))?)");
 
   // Match lines like: "Theory SafeAdd" to track which module/function
   // goals belong to.
-  static const std::regex theoryRegex(R"(Theory\s+(\S+))");
+  static const std::regex THEORY_REGEX(R"(Theory\s+(\S+))");
 
   std::string currentFuncName;
 
@@ -51,14 +51,14 @@ parseWhy3Output(const std::string& output,
   while (std::getline(stream, line)) {
     // Track current theory/module context for function name attribution
     std::smatch theoryMatch;
-    if (std::regex_search(line, theoryMatch, theoryRegex)) {
+    if (std::regex_search(line, theoryMatch, THEORY_REGEX)) {
       auto it = moduleToFuncMap.find(theoryMatch[1].str());
       currentFuncName =
           it != moduleToFuncMap.end() ? it->second : theoryMatch[1].str();
     }
 
     std::smatch match;
-    if (std::regex_search(line, match, goalRegex)) {
+    if (std::regex_search(line, match, GOAL_REGEX)) {
       ObligationResult result;
       result.name = match[1].str();
       result.functionName = currentFuncName;
@@ -77,10 +77,10 @@ parseWhy3Output(const std::string& output,
       // Parse duration if present (e.g., "0.01s, 0 steps")
       if (match.size() > DETAIL_GROUP_INDEX &&
           match[DETAIL_GROUP_INDEX].matched) {
-        static const std::regex durationRegex(R"(([\d.]+)s)");
+        static const std::regex DURATION_REGEX(R"(([\d.]+)s)");
         std::smatch durMatch;
         auto detailStr = match[DETAIL_GROUP_INDEX].str();
-        if (std::regex_search(detailStr, durMatch, durationRegex)) {
+        if (std::regex_search(detailStr, durMatch, DURATION_REGEX)) {
           auto durStr = durMatch[1].str();
           double seconds = 0.0;
           auto [ptr, ec] = std::from_chars(

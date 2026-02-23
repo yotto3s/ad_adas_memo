@@ -1,5 +1,7 @@
 #include "arcanum/frontend/ContractParser.h"
 
+#include <array>
+
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Comment.h"
 #include "clang/AST/Decl.h"
@@ -135,17 +137,18 @@ private:
     }
     skipWhitespace();
     // Data-driven comparison operator table.  Multi-character operators
-    // must appear before their single-character prefixes (e.g. "<=" before "<").
+    // must appear before their single-character prefixes (e.g. "<=" before
+    // "<").
     struct CompOp {
       llvm::StringLiteral token;
       BinaryOpKind kind;
     };
-    static constexpr CompOp compOps[] = {
+    static constexpr std::array<CompOp, 6> COMP_OPS = {{
         {"<=", BinaryOpKind::Le}, {">=", BinaryOpKind::Ge},
         {"==", BinaryOpKind::Eq}, {"!=", BinaryOpKind::Ne},
         {"<", BinaryOpKind::Lt},  {">", BinaryOpKind::Gt},
-    };
-    for (const auto& op : compOps) {
+    }};
+    for (const auto& op : COMP_OPS) {
       if (matchString(op.token)) {
         auto rhs = parseAddSub();
         if (!rhs) {
@@ -257,13 +260,15 @@ private:
       return ContractExpr::makeResultRef();
     }
     // true/false (with word boundary check)
+    static constexpr size_t TRUE_LEN = 4;
+    static constexpr size_t FALSE_LEN = 5;
     if (matchString("true")) {
       // Check that the next character is not alphanumeric or underscore
       if (pos < text.size() &&
           ((std::isalnum(static_cast<unsigned char>(text[pos])) != 0) ||
            text[pos] == '_')) {
         // Not a standalone "true" keyword -- backtrack and parse as identifier
-        pos -= 4; // length of "true"
+        pos -= TRUE_LEN;
       } else {
         return ContractExpr::makeBoolLiteral(true);
       }
@@ -272,7 +277,7 @@ private:
       if (pos < text.size() &&
           ((std::isalnum(static_cast<unsigned char>(text[pos])) != 0) ||
            text[pos] == '_')) {
-        pos -= 5; // length of "false"
+        pos -= FALSE_LEN;
       } else {
         return ContractExpr::makeBoolLiteral(false);
       }
@@ -313,8 +318,8 @@ private:
 /// Extract //@ lines from a raw comment block and return them.
 std::vector<std::string> extractAnnotationLines(llvm::StringRef commentText) {
   std::vector<std::string> lines;
-  llvm::SmallVector<llvm::StringRef, 8>
-      splitLines; // NOLINT(readability-magic-numbers)
+  llvm::SmallVector<llvm::StringRef, 8> // NOLINT(readability-magic-numbers)
+      splitLines;
   commentText.split(splitLines, '\n');
 
   for (auto& line : splitLines) {
@@ -381,9 +386,8 @@ parseContracts(clang::ASTContext& context) {
           info.preconditions.push_back(std::move(expr));
         } else {
           llvm::errs() << "warning: in function '" << funcName << "' (line "
-                       << funcLine
-                       << "): failed to parse 'requires' clause: '" << exprText
-                       << "' (contract will be ignored)\n";
+                       << funcLine << "): failed to parse 'requires' clause: '"
+                       << exprText << "' (contract will be ignored)\n";
         }
       } else if (lineRef.starts_with(ENSURES_PREFIX)) {
         auto exprText = lineRef.drop_front(ENSURES_PREFIX.size()).trim();
@@ -392,9 +396,8 @@ parseContracts(clang::ASTContext& context) {
           info.postconditions.push_back(std::move(expr));
         } else {
           llvm::errs() << "warning: in function '" << funcName << "' (line "
-                       << funcLine
-                       << "): failed to parse 'ensures' clause: '" << exprText
-                       << "' (contract will be ignored)\n";
+                       << funcLine << "): failed to parse 'ensures' clause: '"
+                       << exprText << "' (contract will be ignored)\n";
         }
       }
     }

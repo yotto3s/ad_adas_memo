@@ -190,7 +190,8 @@ private:
         builder.create<arc::ReturnOp>(getLoc(ret->getReturnLoc()), *retVal);
       } else {
         // Void return: create ReturnOp with no operand
-        builder.create<arc::ReturnOp>(getLoc(ret->getReturnLoc()), mlir::Value());
+        builder.create<arc::ReturnOp>(getLoc(ret->getReturnLoc()),
+                                      mlir::Value());
       }
     } else if (const auto* declStmt = llvm::dyn_cast<clang::DeclStmt>(stmt)) {
       for (const auto* d : declStmt->decls()) {
@@ -201,9 +202,9 @@ private:
               return; // Propagate failure.
             }
             auto loc = getLoc(varDecl->getLocation());
-            auto varOp =
-                builder.create<arc::VarOp>(loc, getArcType(varDecl->getType()),
-                                           varDecl->getNameAsString(), *initVal);
+            auto varOp = builder.create<arc::VarOp>(
+                loc, getArcType(varDecl->getType()), varDecl->getNameAsString(),
+                *initVal);
             valueMap[varDecl] = varOp.getResult();
           }
         }
@@ -240,9 +241,8 @@ private:
       }
     } else if (const auto* exprStmt = llvm::dyn_cast<clang::Expr>(stmt)) {
       // Handle assignment expressions (e.g., x = expr)
-      auto* pureExpr = exprStmt->IgnoreParenImpCasts();
-      if (const auto* binOp =
-              llvm::dyn_cast<clang::BinaryOperator>(pureExpr)) {
+      const auto* pureExpr = exprStmt->IgnoreParenImpCasts();
+      if (const auto* binOp = llvm::dyn_cast<clang::BinaryOperator>(pureExpr)) {
         if (binOp->getOpcode() == clang::BO_Assign) {
           auto rhs = lowerExpr(binOp->getRHS(), valueMap);
           if (!rhs) {
@@ -360,8 +360,7 @@ private:
             .getResult();
       default:
         llvm::errs() << "warning: unhandled binary operator opcode "
-                     << binOp->getOpcodeStr()
-                     << ", lowering failed\n";
+                     << binOp->getOpcodeStr() << ", lowering failed\n";
         DiagnosticTracker::recordFallback();
         return std::nullopt;
       }
@@ -407,8 +406,7 @@ private:
     case ContractExprKind::ResultRef:
       return "\\result";
     case ContractExprKind::BinaryOp: {
-      auto op =
-          BINARY_OP_STRINGS[static_cast<size_t>(expr->binaryOp)];
+      const auto *op = BINARY_OP_STRINGS[static_cast<size_t>(expr->binaryOp)];
       return "(" + serializeExpr(expr->left) + " " + op + " " +
              serializeExpr(expr->right) + ")";
     }
