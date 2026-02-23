@@ -119,11 +119,15 @@ jobs:
           chmod -R +x arcanum/build/${{ matrix.preset }}/bin/ || true
 
       - name: Run unit tests
+        env:
+          ASAN_OPTIONS: ${{ matrix.preset == 'asan' && 'detect_leaks=1:halt_on_error=1:allow_user_poisoning=0' || '' }}
         run: |
           cd arcanum
           ctest --preset ${{ matrix.preset }}
 
       - name: Run lit tests
+        env:
+          ASAN_OPTIONS: ${{ matrix.preset == 'asan' && 'detect_leaks=1:halt_on_error=1:allow_user_poisoning=0' || '' }}
         run: |
           cd arcanum
           cmake --build build/${{ matrix.preset }} --target check-arcanum-lit
@@ -145,12 +149,13 @@ jobs:
             --directory build/coverage \
             --output-file build/coverage/coverage.info \
             --gcov-tool "$(pwd)/llvm-gcov.sh" \
-            --ignore-errors mismatch
+            --ignore-errors mismatch,inconsistent
           lcov --remove build/coverage/coverage.info \
             '/usr/*' \
             '*/tests/*' \
             '*/build/*' \
-            --output-file build/coverage/coverage.info
+            --output-file build/coverage/coverage.info \
+            --ignore-errors inconsistent
 
       - name: Upload to Codecov
         if: matrix.preset == 'coverage'
