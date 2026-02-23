@@ -322,57 +322,51 @@ TEST(SubsetEnforcerTest, AcceptsAllFixedWidthTypes) {
   EXPECT_TRUE(result.diagnostics.empty());
 }
 
-// [S2] Reject plain 'int' (platform-dependent width)
-TEST(SubsetEnforcerTest, RejectsPlainInt) {
+// [S2] Accept plain 'int' (width 32 on target platforms)
+TEST(SubsetEnforcerTest, AcceptsPlainInt) {
   auto result = checkSubset(R"(
     int foo(int a) { return a; }
   )");
-  EXPECT_FALSE(result.passed);
-  bool foundFixedWidth = false;
-  for (const auto& diag : result.diagnostics) {
-    if (diag.find("fixed-width") != std::string::npos) {
-      foundFixedWidth = true;
-    }
-  }
-  EXPECT_TRUE(foundFixedWidth);
+  EXPECT_TRUE(result.passed) << "int has width 32; should be accepted";
 }
 
-// [S2] Reject 'short' (platform-dependent width)
-TEST(SubsetEnforcerTest, RejectsShort) {
+// [S2] Accept 'short' (width 16 on target platforms)
+TEST(SubsetEnforcerTest, AcceptsShort) {
   auto result = checkSubset(R"(
     short foo(short a) { return a; }
   )");
-  EXPECT_FALSE(result.passed);
-  bool foundFixedWidth = false;
-  for (const auto& diag : result.diagnostics) {
-    if (diag.find("fixed-width") != std::string::npos) {
-      foundFixedWidth = true;
-    }
-  }
-  EXPECT_TRUE(foundFixedWidth);
+  EXPECT_TRUE(result.passed) << "short has width 16; should be accepted";
 }
 
-// [S2] Reject 'long' (platform-dependent width)
-TEST(SubsetEnforcerTest, RejectsLong) {
+// [S2] Accept 'long' (width 64 on x86_64 Linux)
+TEST(SubsetEnforcerTest, AcceptsLong) {
   auto result = checkSubset(R"(
     long foo(long a) { return a; }
   )");
-  EXPECT_FALSE(result.passed);
-  bool foundFixedWidth = false;
-  for (const auto& diag : result.diagnostics) {
-    if (diag.find("fixed-width") != std::string::npos) {
-      foundFixedWidth = true;
-    }
-  }
-  EXPECT_TRUE(foundFixedWidth);
+  EXPECT_TRUE(result.passed) << "long has width 64 on x86_64; should be accepted";
 }
 
-// [S2] Reject 'unsigned int' (platform-dependent width)
-TEST(SubsetEnforcerTest, RejectsUnsignedInt) {
+// [S2] Accept 'unsigned int' (width 32 on target platforms)
+TEST(SubsetEnforcerTest, AcceptsUnsignedInt) {
   auto result = checkSubset(R"(
     unsigned int foo(unsigned int a) { return a; }
   )");
+  EXPECT_TRUE(result.passed) << "unsigned int has width 32; should be accepted";
+}
+
+// [S2] Reject __int128 (unsupported 128-bit width)
+TEST(SubsetEnforcerTest, RejectsInt128) {
+  auto result = checkSubset(R"(
+    __int128 foo(__int128 a) { return a; }
+  )");
   EXPECT_FALSE(result.passed);
+  bool foundUnsupported = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("unsupported width") != std::string::npos) {
+      foundUnsupported = true;
+    }
+  }
+  EXPECT_TRUE(foundUnsupported);
 }
 
 // ============================================================

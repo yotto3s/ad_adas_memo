@@ -335,73 +335,35 @@ private:
                        });
   }
 
-  /// Check whether a QualType is a supported fixed-width integer type.
-  /// Returns true if the type is an integer with width in {8,16,32,64}.
-  /// Uses the non-canonical type to distinguish fixed-width typedefs
-  /// (e.g., int32_t) from bare builtins (e.g., int).
-  bool isSupportedIntegerType(clang::QualType origType) {
-    clang::QualType canonical = origType.getCanonicalType();
-    if (!canonical->isIntegerType() || canonical->isBooleanType()) {
-      return false;
-    }
-    uint64_t width = ctx.getTypeSize(canonical);
-    return isAllowedWidth(width);
-  }
-
-  /// Check whether a QualType is a bare builtin integer type (int, short,
-  /// long, etc.) without typedef sugar from <cstdint>. Such types have
-  /// platform-dependent widths and are rejected in favor of fixed-width types.
-  bool isBareBuiltinIntegerType(clang::QualType type) {
-    // If the type has typedef sugar, it's something like int32_t -- not bare
-    if (type->getAs<clang::TypedefType>()) {
-      return false;
-    }
-    clang::QualType canonical = type.getCanonicalType();
-    if (!canonical->isIntegerType() || canonical->isBooleanType()) {
-      return false;
-    }
-    // It's a bare builtin integer (int, short, long, unsigned int, etc.)
-    return true;
-  }
-
   void checkType(clang::QualType type, clang::SourceLocation loc) {
-    // Work with the non-canonical (sugared) type first to detect bare builtins
-    clang::QualType desugared = type.getCanonicalType();
+    clang::QualType canonical = type.getCanonicalType();
     // Allow void
-    if (desugared->isVoidType()) {
+    if (canonical->isVoidType()) {
       return;
     }
     // Allow bool
-    if (desugared->isBooleanType()) {
+    if (canonical->isBooleanType()) {
       return;
     }
     // Reject raw pointers
-    if (desugared->isPointerType()) {
+    if (canonical->isPointerType()) {
       addDiagnostic(loc, "raw pointer types are not allowed");
       return;
     }
     // Reject floating-point
-    if (desugared->isFloatingType()) {
+    if (canonical->isFloatingType()) {
       addDiagnostic(loc, "floating-point types are not allowed in Slice 1");
       return;
     }
-    // Check integer types
-    if (desugared->isIntegerType()) {
-      // Reject bare builtin integer types (int, short, long, etc.)
-      if (isBareBuiltinIntegerType(type)) {
-        addDiagnostic(
-            loc,
-            "use fixed-width integer types (e.g., int32_t) instead of '" +
-                type.getAsString() + "'");
+    // Accept any integer type with width in {8, 16, 32, 64}
+    if (canonical->isIntegerType()) {
+      uint64_t width = ctx.getTypeSize(canonical);
+      if (isAllowedWidth(width)) {
         return;
       }
-      // Accept fixed-width types with allowed widths
-      if (isSupportedIntegerType(type)) {
-        return;
-      }
-      // Integer typedef with unsupported width
-      addDiagnostic(loc, "type '" + type.getAsString() +
-                             "' is not a supported fixed-width integer type");
+      addDiagnostic(loc, "integer type '" + type.getAsString() +
+                             "' has unsupported width; use int8_t through "
+                             "int64_t or uint8_t through uint64_t");
       return;
     }
     // Reject everything else
