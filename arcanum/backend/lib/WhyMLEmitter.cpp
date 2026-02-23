@@ -327,7 +327,8 @@ private:
     }
   }
 
-  /// Emit a type-aware overflow assertion: assert { MIN <= expr /\ expr <= MAX }
+  /// Emit a type-aware overflow assertion: assert { MIN <= expr /\ expr <= MAX
+  /// }
   void emitTrapAssertion(const std::string& expr, arc::IntType intType,
                          llvm::raw_string_ostream& out) {
     out << "    assert { " << getMinStr(intType) << " <= " << expr << " /\\ "

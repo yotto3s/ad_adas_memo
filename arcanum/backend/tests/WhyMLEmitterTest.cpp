@@ -591,9 +591,9 @@ protected:
     entryBlock.addArgument(type, builder_->getUnknownLoc());
 
     builder_->setInsertionPointToEnd(&entryBlock);
-    auto addOp = builder_->create<arc::AddOp>(
-        builder_->getUnknownLoc(), type, entryBlock.getArgument(0),
-        entryBlock.getArgument(1));
+    auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), type,
+                                              entryBlock.getArgument(0),
+                                              entryBlock.getArgument(1));
 
     if (!overflowMode.empty()) {
       addOp->setAttr("overflow", builder_->getStringAttr(overflowMode));

@@ -343,7 +343,8 @@ TEST(SubsetEnforcerTest, AcceptsLong) {
   auto result = checkSubset(R"(
     long foo(long a) { return a; }
   )");
-  EXPECT_TRUE(result.passed) << "long has width 64 on x86_64; should be accepted";
+  EXPECT_TRUE(result.passed)
+      << "long has width 64 on x86_64; should be accepted";
 }
 
 // [S2] Accept 'unsigned int' (width 32 on target platforms)
@@ -381,7 +382,8 @@ TEST(SubsetEnforcerTest, AcceptsStaticCast) {
       return static_cast<int16_t>(x);
     }
   )");
-  EXPECT_TRUE(result.passed) << "static_cast between supported types should be accepted";
+  EXPECT_TRUE(result.passed)
+      << "static_cast between supported types should be accepted";
   EXPECT_TRUE(result.diagnostics.empty());
 }
 
@@ -450,6 +452,28 @@ TEST(SubsetEnforcerTest, RejectsConstCast) {
   bool foundCast = false;
   for (const auto& diag : result.diagnostics) {
     if (diag.find("const_cast") != std::string::npos) {
+      foundCast = true;
+    }
+  }
+  EXPECT_TRUE(foundCast);
+}
+
+// [S2] Reject dynamic_cast
+TEST(SubsetEnforcerTest, RejectsDynamicCast) {
+  auto result = checkSubset(R"(
+    class Base {
+    public:
+      virtual ~Base() = default;
+    };
+    class Derived : public Base {};
+    void foo(Base* b) {
+      Derived* d = dynamic_cast<Derived*>(b);
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundCast = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("dynamic_cast") != std::string::npos) {
       foundCast = true;
     }
   }
