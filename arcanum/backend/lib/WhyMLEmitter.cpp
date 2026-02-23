@@ -17,9 +17,60 @@ namespace {
 /// Token string for \result in contract expressions.
 constexpr llvm::StringLiteral RESULT_TOKEN("\\result");
 
-/// String representations of INT32 bounds for overflow assertions.
-constexpr llvm::StringLiteral INT32_MIN_STR("-2147483648");
-constexpr llvm::StringLiteral INT32_MAX_STR("2147483647");
+/// Get the minimum value of an IntType as a decimal string.
+std::string getMinStr(arc::IntType type) {
+  llvm::APInt minVal = type.getMinValue();
+  llvm::SmallString<32> str;
+  minVal.toStringSigned(str);
+  return std::string(str);
+}
+
+/// Get the maximum value of an IntType as a decimal string.
+std::string getMaxStr(arc::IntType type) {
+  llvm::APInt maxVal = type.getMaxValue();
+  if (type.getIsSigned()) {
+    llvm::SmallString<32> str;
+    maxVal.toStringSigned(str);
+    return std::string(str);
+  }
+  llvm::SmallString<32> str;
+  maxVal.toStringUnsigned(str);
+  return std::string(str);
+}
+
+/// Get 2^N as a decimal string (for modular arithmetic).
+std::string getPowerOfTwo(unsigned width) {
+  llvm::APInt val = llvm::APInt(width + 1, 1).shl(width);
+  llvm::SmallString<32> str;
+  val.toStringUnsigned(str);
+  return std::string(str);
+}
+
+/// Get 2^(N-1) as a decimal string (for signed wrap offset).
+std::string getHalfPowerOfTwo(unsigned width) {
+  llvm::APInt val = llvm::APInt(width, 1).shl(width - 1);
+  llvm::SmallString<32> str;
+  val.toStringUnsigned(str);
+  return std::string(str);
+}
+
+/// Read the overflow mode from an operation's "overflow" string attribute.
+/// Returns "trap" if no attribute is present (default mode).
+llvm::StringRef getOverflowMode(mlir::Operation* op) {
+  if (auto attr = op->getAttrOfType<mlir::StringAttr>("overflow")) {
+    return attr.getValue();
+  }
+  return "trap";
+}
+
+/// Extract the IntType from an MLIR operation's result type.
+/// Returns nullptr if the result is not an arc::IntType.
+arc::IntType getResultIntType(mlir::Operation* op) {
+  if (op->getNumResults() > 0) {
+    return mlir::dyn_cast<arc::IntType>(op->getResult(0).getType());
+  }
+  return {};
+}
 
 /// Convert a contract expression string from Arc format to WhyML format.
 /// Transforms: \result -> result, && -> /\, || -> \/, etc.
@@ -183,10 +234,16 @@ private:
         mlir::isa<arc::BoolType>(funcType.getResult(0))) {
       needsBool = true;
     }
-    // Scan for DivOp/RemOp to determine if ComputerDivision is needed
+    // Scan for DivOp/RemOp or wrap-mode arithmetic to determine if
+    // ComputerDivision is needed (wrap mode uses mod for modular arithmetic)
     funcOp.walk([&](mlir::Operation* op) {
       if (llvm::isa<arc::DivOp>(op) || llvm::isa<arc::RemOp>(op)) {
         needsComputerDivision = true;
+      }
+      if (llvm::isa<arc::AddOp, arc::SubOp, arc::MulOp>(op)) {
+        if (getOverflowMode(op) == "wrap") {
+          needsComputerDivision = true;
+        }
       }
     });
 
@@ -270,32 +327,95 @@ private:
     }
   }
 
-  /// Emit a binary arithmetic op with an i32 overflow assertion.
+  /// Emit a type-aware overflow assertion: assert { MIN <= expr /\ expr <= MAX }
+  void emitTrapAssertion(const std::string& expr, arc::IntType intType,
+                         llvm::raw_string_ostream& out) {
+    out << "    assert { " << getMinStr(intType) << " <= " << expr << " /\\ "
+        << expr << " <= " << getMaxStr(intType) << " };\n";
+  }
+
+  /// Emit a binary arithmetic op with mode-aware overflow handling.
   void emitArithWithOverflowCheck(
-      mlir::Value result, mlir::Value lhsVal, mlir::Value rhsVal,
+      mlir::Operation* op, mlir::Value lhsVal, mlir::Value rhsVal,
       const std::string& whymlOp, llvm::raw_string_ostream& out,
       llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto lhs = getExpr(lhsVal, nameMap);
     auto rhs = getExpr(rhsVal, nameMap);
-    auto expr = "(" + lhs + " " + whymlOp + " " + rhs + ")";
-    out << "    assert { " << INT32_MIN_STR.data() << " <= " << expr << " /\\ "
-        << expr << " <= " << INT32_MAX_STR.data() << " };\n";
-    nameMap[result] = expr;
+    auto rawExpr = "(" + lhs + " " + whymlOp + " " + rhs + ")";
+
+    auto intType = getResultIntType(op);
+    auto mode = getOverflowMode(op);
+
+    if (mode == "wrap") {
+      // Modular arithmetic
+      std::string modExpr;
+      if (intType && !intType.getIsSigned()) {
+        // Unsigned wrap: mod (a op b) 2^N
+        modExpr =
+            "(mod " + rawExpr + " " + getPowerOfTwo(intType.getWidth()) + ")";
+      } else if (intType) {
+        // Signed wrap: mod (r + 2^(N-1)) 2^N - 2^(N-1)
+        auto halfPow = getHalfPowerOfTwo(intType.getWidth());
+        auto fullPow = getPowerOfTwo(intType.getWidth());
+        modExpr = "((mod (" + rawExpr + " + " + halfPow + ") " + fullPow +
+                  ") - " + halfPow + ")";
+      } else {
+        modExpr = rawExpr;
+      }
+      nameMap[op->getResult(0)] = modExpr;
+    } else if (mode == "saturate" && intType) {
+      // Saturate: if r < MIN then MIN else if r > MAX then MAX else r
+      auto minStr = getMinStr(intType);
+      auto maxStr = getMaxStr(intType);
+      auto satExpr = "(if " + rawExpr + " < " + minStr + " then " + minStr +
+                     " else if " + rawExpr + " > " + maxStr + " then " +
+                     maxStr + " else " + rawExpr + ")";
+      nameMap[op->getResult(0)] = satExpr;
+    } else {
+      // Trap mode (default): assert bounds, keep raw expression
+      if (intType) {
+        emitTrapAssertion(rawExpr, intType, out);
+      }
+      nameMap[op->getResult(0)] = rawExpr;
+    }
   }
 
   /// Emit a division-like op with divisor-not-zero and overflow assertions.
-  void emitDivLikeOp(mlir::Value result, mlir::Value lhsVal, mlir::Value rhsVal,
-                     const std::string& whymlFunc,
+  void emitDivLikeOp(mlir::Operation* op, mlir::Value lhsVal,
+                     mlir::Value rhsVal, const std::string& whymlFunc,
                      llvm::raw_string_ostream& out,
                      llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto lhs = getExpr(lhsVal, nameMap);
     auto rhs = getExpr(rhsVal, nameMap);
     auto expr = "(" + whymlFunc + " " + lhs + " " + rhs + ")";
     out << "    assert { " << rhs << " <> 0 };\n";
-    // Overflow check: INT_MIN / -1 overflows in C (undefined behavior)
-    out << "    assert { " << INT32_MIN_STR.data() << " <= " << expr << " /\\ "
-        << expr << " <= " << INT32_MAX_STR.data() << " };\n";
-    nameMap[result] = expr;
+    // Overflow check: MIN / -1 overflows for signed types in trap mode
+    auto intType = getResultIntType(op);
+    if (intType) {
+      emitTrapAssertion(expr, intType, out);
+    }
+    nameMap[op->getResult(0)] = expr;
+  }
+
+  /// Emit a CastOp: widening is identity, narrowing/sign-change in trap mode
+  /// asserts the target range.
+  void emitCastOp(arc::CastOp castOp, llvm::raw_string_ostream& out,
+                  llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+    auto inputExpr = getExpr(castOp.getInput(), nameMap);
+    auto srcType = mlir::dyn_cast<arc::IntType>(castOp.getInput().getType());
+    auto dstType = mlir::dyn_cast<arc::IntType>(castOp.getResult().getType());
+
+    if (srcType && dstType) {
+      bool isWidening = dstType.getWidth() >= srcType.getWidth() &&
+                        (dstType.getIsSigned() == srcType.getIsSigned() ||
+                         (!srcType.getIsSigned() && dstType.getIsSigned()));
+      if (!isWidening) {
+        // Narrowing or sign-change in trap mode: assert target range
+        emitTrapAssertion(inputExpr, dstType, out);
+      }
+    }
+    // The cast itself is an identity in WhyML (all integers are mathematical)
+    nameMap[castOp.getResult()] = inputExpr;
   }
 
   void emitOp(mlir::Operation& op, llvm::raw_string_ostream& out,
@@ -310,20 +430,20 @@ private:
       }
       nameMap[constOp.getResult()] = valStr;
     } else if (auto addOp = llvm::dyn_cast<arc::AddOp>(&op)) {
-      emitArithWithOverflowCheck(addOp.getResult(), addOp.getLhs(),
-                                 addOp.getRhs(), "+", out, nameMap);
+      emitArithWithOverflowCheck(&op, addOp.getLhs(), addOp.getRhs(), "+", out,
+                                 nameMap);
     } else if (auto subOp = llvm::dyn_cast<arc::SubOp>(&op)) {
-      emitArithWithOverflowCheck(subOp.getResult(), subOp.getLhs(),
-                                 subOp.getRhs(), "-", out, nameMap);
+      emitArithWithOverflowCheck(&op, subOp.getLhs(), subOp.getRhs(), "-", out,
+                                 nameMap);
     } else if (auto mulOp = llvm::dyn_cast<arc::MulOp>(&op)) {
-      emitArithWithOverflowCheck(mulOp.getResult(), mulOp.getLhs(),
-                                 mulOp.getRhs(), "*", out, nameMap);
+      emitArithWithOverflowCheck(&op, mulOp.getLhs(), mulOp.getRhs(), "*", out,
+                                 nameMap);
     } else if (auto divOp = llvm::dyn_cast<arc::DivOp>(&op)) {
-      emitDivLikeOp(divOp.getResult(), divOp.getLhs(), divOp.getRhs(), "div",
-                    out, nameMap);
+      emitDivLikeOp(&op, divOp.getLhs(), divOp.getRhs(), "div", out, nameMap);
     } else if (auto remOp = llvm::dyn_cast<arc::RemOp>(&op)) {
-      emitDivLikeOp(remOp.getResult(), remOp.getLhs(), remOp.getRhs(), "mod",
-                    out, nameMap);
+      emitDivLikeOp(&op, remOp.getLhs(), remOp.getRhs(), "mod", out, nameMap);
+    } else if (auto castOp = llvm::dyn_cast<arc::CastOp>(&op)) {
+      emitCastOp(castOp, out, nameMap);
     } else if (auto cmpOp = llvm::dyn_cast<arc::CmpOp>(&op)) {
       auto lhs = getExpr(cmpOp.getLhs(), nameMap);
       auto rhs = getExpr(cmpOp.getRhs(), nameMap);

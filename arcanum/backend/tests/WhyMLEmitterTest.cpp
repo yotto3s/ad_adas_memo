@@ -5,6 +5,7 @@
 #include "arcanum/dialect/Lowering.h"
 #include "arcanum/frontend/ContractParser.h"
 
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "clang/Tooling/Tooling.h"
@@ -547,6 +548,225 @@ TEST(WhyMLEmitterTest, EmitsAssignOpAsLetRebinding) {
   EXPECT_NE(secondLet, std::string::npos)
       << "WhyML output missing second 'let x =' re-binding for assignment.  "
          "Text:\n"
+      << result->whymlText;
+}
+
+// ============================================================
+// Slice 2: Type-aware bounds, overflow modes, cast emission
+// ============================================================
+
+/// Test fixture for building Arc IR directly via OpBuilder.
+class WhyMLEmitterSlice2Test : public ::testing::Test {
+protected:
+  void SetUp() override {
+    ctx_.getOrLoadDialect<arc::ArcDialect>();
+    builder_ = std::make_unique<mlir::OpBuilder>(&ctx_);
+  }
+
+  /// Build a module with a single function containing one arithmetic op
+  /// on the given type with the given overflow mode.
+  /// Returns the emitted WhyML text.
+  std::optional<WhyMLResult> buildAndEmitArithFunc(
+      arc::IntType type, const std::string& overflowMode,
+      const std::string& funcName,
+      std::function<arc::AddOp(mlir::OpBuilder&, mlir::Location, arc::IntType,
+                               mlir::Value, mlir::Value)>
+          createOp = nullptr) {
+    auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+    builder_->setInsertionPointToEnd(module.getBody());
+
+    auto funcType = builder_->getFunctionType({type, type}, {type});
+    auto funcOp = builder_->create<arc::FuncOp>(
+        builder_->getUnknownLoc(), funcName, funcType,
+        /*requires_attr=*/mlir::StringAttr{},
+        /*ensures_attr=*/mlir::StringAttr{});
+
+    // Set param_names
+    funcOp->setAttr("param_names",
+                    builder_->getArrayAttr({builder_->getStringAttr("a"),
+                                            builder_->getStringAttr("b")}));
+
+    auto& entryBlock = funcOp.getBody().emplaceBlock();
+    entryBlock.addArgument(type, builder_->getUnknownLoc());
+    entryBlock.addArgument(type, builder_->getUnknownLoc());
+
+    builder_->setInsertionPointToEnd(&entryBlock);
+    auto addOp = builder_->create<arc::AddOp>(
+        builder_->getUnknownLoc(), type, entryBlock.getArgument(0),
+        entryBlock.getArgument(1));
+
+    if (!overflowMode.empty()) {
+      addOp->setAttr("overflow", builder_->getStringAttr(overflowMode));
+    }
+
+    builder_->create<arc::ReturnOp>(builder_->getUnknownLoc(),
+                                    addOp.getResult());
+
+    auto result = emitWhyML(module);
+    module->destroy();
+    return result;
+  }
+
+  /// Build a module with a single function containing a CastOp.
+  std::optional<WhyMLResult> buildAndEmitCastFunc(arc::IntType srcType,
+                                                  arc::IntType dstType,
+                                                  const std::string& funcName) {
+    auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+    builder_->setInsertionPointToEnd(module.getBody());
+
+    auto funcType = builder_->getFunctionType({srcType}, {dstType});
+    auto funcOp = builder_->create<arc::FuncOp>(
+        builder_->getUnknownLoc(), funcName, funcType,
+        /*requires_attr=*/mlir::StringAttr{},
+        /*ensures_attr=*/mlir::StringAttr{});
+
+    funcOp->setAttr("param_names",
+                    builder_->getArrayAttr({builder_->getStringAttr("x")}));
+
+    auto& entryBlock = funcOp.getBody().emplaceBlock();
+    entryBlock.addArgument(srcType, builder_->getUnknownLoc());
+
+    builder_->setInsertionPointToEnd(&entryBlock);
+    auto castOp = builder_->create<arc::CastOp>(
+        builder_->getUnknownLoc(), dstType, entryBlock.getArgument(0));
+    builder_->create<arc::ReturnOp>(builder_->getUnknownLoc(),
+                                    castOp.getResult());
+
+    auto result = emitWhyML(module);
+    module->destroy();
+    return result;
+  }
+
+  mlir::MLIRContext ctx_;
+  std::unique_ptr<mlir::OpBuilder> builder_;
+};
+
+// [S2] i8 bounds in overflow assertion output
+TEST_F(WhyMLEmitterSlice2Test, EmitsI8BoundsInTrapMode) {
+  auto i8Type = arc::IntType::get(&ctx_, 8, true);
+  auto result = buildAndEmitArithFunc(i8Type, "", "add_i8");
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("-128"), std::string::npos)
+      << "Missing i8 min bound.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("127"), std::string::npos)
+      << "Missing i8 max bound.  Text:\n"
+      << result->whymlText;
+}
+
+// [S2] u8 wrap mode uses mod 256
+TEST_F(WhyMLEmitterSlice2Test, EmitsU8WrapWithMod256) {
+  auto u8Type = arc::IntType::get(&ctx_, 8, false);
+  auto result = buildAndEmitArithFunc(u8Type, "wrap", "add_u8");
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("mod"), std::string::npos)
+      << "Missing mod for wrap mode.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("256"), std::string::npos)
+      << "Missing 2^8=256 for u8 wrap.  Text:\n"
+      << result->whymlText;
+  // Should NOT have an assert (wrap mode doesn't trap)
+  EXPECT_EQ(result->whymlText.find("assert"), std::string::npos)
+      << "Wrap mode should not emit assert.  Text:\n"
+      << result->whymlText;
+}
+
+// [S2] Signed wrap mode uses mod with offset
+TEST_F(WhyMLEmitterSlice2Test, EmitsSignedWrapWithModAndOffset) {
+  auto i8Type = arc::IntType::get(&ctx_, 8, true);
+  auto result = buildAndEmitArithFunc(i8Type, "wrap", "add_i8_wrap");
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("mod"), std::string::npos)
+      << "Missing mod for signed wrap.  Text:\n"
+      << result->whymlText;
+  // Should contain 128 (half power) and 256 (full power) for i8
+  EXPECT_NE(result->whymlText.find("128"), std::string::npos)
+      << "Missing 2^7=128 offset for signed i8 wrap.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("256"), std::string::npos)
+      << "Missing 2^8=256 modulus for signed i8 wrap.  Text:\n"
+      << result->whymlText;
+}
+
+// [S2] Saturate mode emits clamping expression
+TEST_F(WhyMLEmitterSlice2Test, EmitsSaturateClamp) {
+  auto i8Type = arc::IntType::get(&ctx_, 8, true);
+  auto result = buildAndEmitArithFunc(i8Type, "saturate", "add_i8_sat");
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("-128"), std::string::npos)
+      << "Missing min clamp bound.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("127"), std::string::npos)
+      << "Missing max clamp bound.  Text:\n"
+      << result->whymlText;
+  // Saturate mode uses if-then-else, not assert
+  EXPECT_EQ(result->whymlText.find("assert"), std::string::npos)
+      << "Saturate mode should not emit assert for the add.  Text:\n"
+      << result->whymlText;
+}
+
+// [S2] ComputerDivision import for wrap mode
+TEST_F(WhyMLEmitterSlice2Test, WrapModeImportsComputerDivision) {
+  auto u8Type = arc::IntType::get(&ctx_, 8, false);
+  auto result = buildAndEmitArithFunc(u8Type, "wrap", "add_wrap");
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("use int.ComputerDivision"),
+            std::string::npos)
+      << "Wrap mode needs ComputerDivision import for mod.  Text:\n"
+      << result->whymlText;
+}
+
+// [S2] Widening cast (i8 -> i32) produces no assert
+TEST_F(WhyMLEmitterSlice2Test, WideningCastNoAssert) {
+  auto i8Type = arc::IntType::get(&ctx_, 8, true);
+  auto i32Type = arc::IntType::get(&ctx_, 32, true);
+  auto result = buildAndEmitCastFunc(i8Type, i32Type, "widen_i8_to_i32");
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_EQ(result->whymlText.find("assert"), std::string::npos)
+      << "Widening cast should not emit assert.  Text:\n"
+      << result->whymlText;
+}
+
+// [S2] Narrowing cast (i32 -> i8) in trap mode asserts target range
+TEST_F(WhyMLEmitterSlice2Test, NarrowingCastAssertsRange) {
+  auto i32Type = arc::IntType::get(&ctx_, 32, true);
+  auto i8Type = arc::IntType::get(&ctx_, 8, true);
+  auto result = buildAndEmitCastFunc(i32Type, i8Type, "narrow_i32_to_i8");
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("assert"), std::string::npos)
+      << "Narrowing cast should emit assert.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("-128"), std::string::npos)
+      << "Should assert i8 min bound.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("127"), std::string::npos)
+      << "Should assert i8 max bound.  Text:\n"
+      << result->whymlText;
+}
+
+// [S2] Sign-change cast (i32 -> u32) in trap mode asserts target range
+TEST_F(WhyMLEmitterSlice2Test, SignChangeCastAssertsRange) {
+  auto i32Type = arc::IntType::get(&ctx_, 32, true);
+  auto u32Type = arc::IntType::get(&ctx_, 32, false);
+  auto result = buildAndEmitCastFunc(i32Type, u32Type, "signchange_i32_to_u32");
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("assert"), std::string::npos)
+      << "Sign-change cast should emit assert.  Text:\n"
+      << result->whymlText;
+  // u32 range: 0 to 4294967295
+  EXPECT_NE(result->whymlText.find("0 <="), std::string::npos)
+      << "Should assert u32 min bound (0).  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("4294967295"), std::string::npos)
+      << "Should assert u32 max bound.  Text:\n"
       << result->whymlText;
 }
 
