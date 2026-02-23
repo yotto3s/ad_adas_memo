@@ -96,6 +96,10 @@ private:
       return arc::BoolType::get(&mlirCtx);
     }
     // Map integer types using Clang's type size and signedness queries.
+    // Note: C integer promotion (e.g., int8_t + int8_t promoting to int)
+    // is faithfully preserved -- Clang's AST already reflects promoted
+    // types in binary expressions, so the lowering sees the post-promotion
+    // type naturally.
     if (canonical->isIntegerType()) {
       unsigned width = static_cast<unsigned>(astCtx.getTypeSize(canonical));
       bool isSigned = canonical->isSignedIntegerType();
@@ -298,11 +302,12 @@ private:
     if (const auto* intLit = llvm::dyn_cast<clang::IntegerLiteral>(expr)) {
       auto val = intLit->getValue().getSExtValue();
       auto litType = getArcType(intLit->getType());
+      auto intType = llvm::dyn_cast<arc::IntType>(litType);
+      unsigned width = intType ? intType.getWidth() : 32;
       return builder
           .create<arc::ConstantOp>(
               loc, litType,
-              builder.getIntegerAttr(builder.getIntegerType(32),
-                                     static_cast<int32_t>(val)))
+              builder.getIntegerAttr(builder.getIntegerType(width), val))
           .getResult();
     }
 
@@ -415,9 +420,11 @@ private:
             .create<arc::NotOp>(loc, arc::BoolType::get(&mlirCtx), *operand)
             .getResult();
       case clang::UO_Minus: {
+        auto operandIntType = llvm::dyn_cast<arc::IntType>(operand->getType());
+        unsigned negWidth = operandIntType ? operandIntType.getWidth() : 32;
         auto zero = builder.create<arc::ConstantOp>(
             loc, operand->getType(),
-            builder.getIntegerAttr(builder.getIntegerType(32), 0));
+            builder.getIntegerAttr(builder.getIntegerType(negWidth), 0));
         auto subOp =
             builder.create<arc::SubOp>(loc, operand->getType(), zero, *operand);
         setOverflowAttr(subOp);
