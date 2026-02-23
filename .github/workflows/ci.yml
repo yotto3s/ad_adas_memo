@@ -58,6 +58,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Remove conflicting libc++abi headers
+        run: |
+          # LLVM 21's cxxabi.h (from libc++abi-21-dev) conflicts with GCC 13's
+          # libstdc++ headers.  Remove it so <cxxabi.h> resolves to GCC's version.
+          # TODO: remove this step after rebuilding arcanum-base image with
+          # the updated Dockerfile.base that no longer installs libc++abi-21-dev.
+          rm -f /usr/lib/llvm-21/include/cxxabi.h \
+                /usr/lib/llvm-21/include/__cxxabi_config.h
+
       - name: Restore ccache
         uses: actions/cache@v4
         with:

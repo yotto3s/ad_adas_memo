@@ -29,11 +29,23 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && apt-get clean
 
-# Install LLVM 21 via llvm.sh
+# Install LLVM 21 (base: clang, lld, lldb, clangd)
 RUN wget https://apt.llvm.org/llvm.sh && \
     chmod +x llvm.sh && \
-    sudo ./llvm.sh 21 all && \
+    sudo ./llvm.sh 21 && \
     rm llvm.sh
+
+# Install LLVM/Clang development packages needed for Arcanum.
+# We install specific packages instead of 'llvm.sh 21 all' to avoid pulling
+# in libc++-21-dev / libc++abi-21-dev.  Those packages place cxxabi.h in
+# /usr/lib/llvm-21/include/ which conflicts with GCC 13's libstdc++ headers
+# when LLVM include dirs are on the system include path (via CMake SYSTEM).
+RUN apt-get update && apt-get install -y \
+    llvm-21-dev \
+    libclang-21-dev \
+    clang-format-21 \
+    clang-tidy-21 \
+    && apt-get clean
 
 # Install MLIR development packages
 RUN apt-get update && apt-get install -y \
