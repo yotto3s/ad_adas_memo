@@ -16,9 +16,28 @@
 #include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <array>
+#include <optional>
 #include <string>
 
 namespace arcanum {
+
+/// Lookup table mapping BinaryOpKind to its operator string for serialization.
+static constexpr std::array<const char*, 13> BINARY_OP_STRINGS = {
+    "+",  // Add
+    "-",  // Sub
+    "*",  // Mul
+    "/",  // Div
+    "%",  // Rem
+    "<",  // Lt
+    "<=", // Le
+    ">",  // Gt
+    ">=", // Ge
+    "==", // Eq
+    "!=", // Ne
+    "&&", // And
+    "||", // Or
+};
 namespace {
 
 class ArcLowering {
@@ -34,6 +53,12 @@ public:
     module = mlir::ModuleOp::create(builder.getUnknownLoc());
     builder.setInsertionPointToEnd(module->getBody());
 
+    // Iterate over top-level TU declarations only.
+    // IMPORTANT: This must iterate the same declaration list as
+    // parseContracts() in ContractParser.cpp, because the contract map
+    // is keyed by FunctionDecl pointer identity.  Both functions must
+    // agree on which declarations they process.  SubsetEnforcer also
+    // validates that only TU-level functions are accepted.
     for (auto* decl : astCtx.getTranslationUnitDecl()->decls()) {
       if (auto* funcDecl = llvm::dyn_cast<clang::FunctionDecl>(decl)) {
         if (funcDecl->hasBody()) {
@@ -157,17 +182,28 @@ private:
         lowerStmt(child, valueMap);
       }
     } else if (const auto* ret = llvm::dyn_cast<clang::ReturnStmt>(stmt)) {
-      auto retVal = lowerExpr(ret->getRetValue(), valueMap);
-      builder.create<arc::ReturnOp>(getLoc(ret->getReturnLoc()), retVal);
+      if (ret->getRetValue() != nullptr) {
+        auto retVal = lowerExpr(ret->getRetValue(), valueMap);
+        if (!retVal) {
+          return; // Propagate failure; DiagnosticTracker already recorded it.
+        }
+        builder.create<arc::ReturnOp>(getLoc(ret->getReturnLoc()), *retVal);
+      } else {
+        // Void return: create ReturnOp with no operand
+        builder.create<arc::ReturnOp>(getLoc(ret->getReturnLoc()), mlir::Value());
+      }
     } else if (const auto* declStmt = llvm::dyn_cast<clang::DeclStmt>(stmt)) {
       for (const auto* d : declStmt->decls()) {
         if (const auto* varDecl = llvm::dyn_cast<clang::VarDecl>(d)) {
           if (varDecl->hasInit()) {
             auto initVal = lowerExpr(varDecl->getInit(), valueMap);
+            if (!initVal) {
+              return; // Propagate failure.
+            }
             auto loc = getLoc(varDecl->getLocation());
             auto varOp =
                 builder.create<arc::VarOp>(loc, getArcType(varDecl->getType()),
-                                           varDecl->getNameAsString(), initVal);
+                                           varDecl->getNameAsString(), *initVal);
             valueMap[varDecl] = varOp.getResult();
           }
         }
@@ -181,8 +217,11 @@ private:
       // branches) may produce incorrect MLIR.  SubsetEnforcer's early-return
       // check partially mitigates this by rejecting guard-clause patterns.
       auto cond = lowerExpr(ifStmt->getCond(), valueMap);
+      if (!cond) {
+        return; // Propagate failure.
+      }
       auto loc = getLoc(ifStmt->getIfLoc());
-      auto ifOp = builder.create<arc::IfOp>(loc, mlir::TypeRange{}, cond);
+      auto ifOp = builder.create<arc::IfOp>(loc, mlir::TypeRange{}, *cond);
 
       // Then region
       auto& thenBlock = ifOp.getThenRegion().emplaceBlock();
@@ -199,11 +238,32 @@ private:
         lowerStmt(ifStmt->getElse(), valueMap);
         builder.restoreInsertionPoint(savedIp2);
       }
+    } else if (const auto* exprStmt = llvm::dyn_cast<clang::Expr>(stmt)) {
+      // Handle assignment expressions (e.g., x = expr)
+      auto* pureExpr = exprStmt->IgnoreParenImpCasts();
+      if (const auto* binOp =
+              llvm::dyn_cast<clang::BinaryOperator>(pureExpr)) {
+        if (binOp->getOpcode() == clang::BO_Assign) {
+          auto rhs = lowerExpr(binOp->getRHS(), valueMap);
+          if (!rhs) {
+            return; // Propagate failure.
+          }
+          auto loc = getLoc(binOp->getOperatorLoc());
+          if (const auto* lhsRef = llvm::dyn_cast<clang::DeclRefExpr>(
+                  binOp->getLHS()->IgnoreParenImpCasts())) {
+            auto it = valueMap.find(lhsRef->getDecl());
+            if (it != valueMap.end()) {
+              builder.create<arc::AssignOp>(loc, it->second, *rhs);
+              // Update valueMap so subsequent reads see the new value
+              valueMap[lhsRef->getDecl()] = *rhs;
+            }
+          }
+        }
+      }
     }
-    // TODO: handle assignment expressions in Slice 1
   }
 
-  mlir::Value
+  std::optional<mlir::Value>
   lowerExpr(const clang::Expr* expr,
             llvm::DenseMap<const clang::ValueDecl*, mlir::Value>& valueMap) {
     expr = expr->IgnoreParenImpCasts();
@@ -211,15 +271,18 @@ private:
 
     if (const auto* intLit = llvm::dyn_cast<clang::IntegerLiteral>(expr)) {
       auto val = intLit->getValue().getSExtValue();
-      return builder.create<arc::ConstantOp>(
-          loc, arc::I32Type::get(&mlirCtx),
-          builder.getI32IntegerAttr(static_cast<int32_t>(val)));
+      return builder
+          .create<arc::ConstantOp>(
+              loc, arc::I32Type::get(&mlirCtx),
+              builder.getI32IntegerAttr(static_cast<int32_t>(val)))
+          .getResult();
     }
 
     if (const auto* boolLit = llvm::dyn_cast<clang::CXXBoolLiteralExpr>(expr)) {
-      return builder.create<arc::ConstantOp>(
-          loc, arc::BoolType::get(&mlirCtx),
-          builder.getBoolAttr(boolLit->getValue()));
+      return builder
+          .create<arc::ConstantOp>(loc, arc::BoolType::get(&mlirCtx),
+                                   builder.getBoolAttr(boolLit->getValue()))
+          .getResult();
     }
 
     if (const auto* declRef = llvm::dyn_cast<clang::DeclRefExpr>(expr)) {
@@ -227,90 +290,110 @@ private:
       if (it != valueMap.end()) {
         return it->second;
       }
-      // Fallback: return a zero constant with diagnostic
       llvm::errs() << "warning: unknown declaration reference '"
                    << declRef->getDecl()->getNameAsString()
-                   << "', using zero fallback\n";
+                   << "', lowering failed\n";
       DiagnosticTracker::recordFallback();
-      return builder.create<arc::ConstantOp>(loc, arc::I32Type::get(&mlirCtx),
-                                             builder.getI32IntegerAttr(0));
+      return std::nullopt;
     }
 
     if (const auto* binOp = llvm::dyn_cast<clang::BinaryOperator>(expr)) {
       auto lhs = lowerExpr(binOp->getLHS(), valueMap);
       auto rhs = lowerExpr(binOp->getRHS(), valueMap);
+      if (!lhs || !rhs) {
+        return std::nullopt;
+      }
 
       switch (binOp->getOpcode()) {
       case clang::BO_Add:
-        return builder.create<arc::AddOp>(loc, lhs.getType(), lhs, rhs);
+        return builder.create<arc::AddOp>(loc, lhs->getType(), *lhs, *rhs)
+            .getResult();
       case clang::BO_Sub:
-        return builder.create<arc::SubOp>(loc, lhs.getType(), lhs, rhs);
+        return builder.create<arc::SubOp>(loc, lhs->getType(), *lhs, *rhs)
+            .getResult();
       case clang::BO_Mul:
-        return builder.create<arc::MulOp>(loc, lhs.getType(), lhs, rhs);
+        return builder.create<arc::MulOp>(loc, lhs->getType(), *lhs, *rhs)
+            .getResult();
       case clang::BO_Div:
-        return builder.create<arc::DivOp>(loc, lhs.getType(), lhs, rhs);
+        return builder.create<arc::DivOp>(loc, lhs->getType(), *lhs, *rhs)
+            .getResult();
       case clang::BO_Rem:
-        return builder.create<arc::RemOp>(loc, lhs.getType(), lhs, rhs);
+        return builder.create<arc::RemOp>(loc, lhs->getType(), *lhs, *rhs)
+            .getResult();
       case clang::BO_LT:
-        return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                          builder.getStringAttr("lt"), lhs,
-                                          rhs);
+        return builder
+            .create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
+                                builder.getStringAttr("lt"), *lhs, *rhs)
+            .getResult();
       case clang::BO_LE:
-        return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                          builder.getStringAttr("le"), lhs,
-                                          rhs);
+        return builder
+            .create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
+                                builder.getStringAttr("le"), *lhs, *rhs)
+            .getResult();
       case clang::BO_GT:
-        return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                          builder.getStringAttr("gt"), lhs,
-                                          rhs);
+        return builder
+            .create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
+                                builder.getStringAttr("gt"), *lhs, *rhs)
+            .getResult();
       case clang::BO_GE:
-        return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                          builder.getStringAttr("ge"), lhs,
-                                          rhs);
+        return builder
+            .create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
+                                builder.getStringAttr("ge"), *lhs, *rhs)
+            .getResult();
       case clang::BO_EQ:
-        return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                          builder.getStringAttr("eq"), lhs,
-                                          rhs);
+        return builder
+            .create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
+                                builder.getStringAttr("eq"), *lhs, *rhs)
+            .getResult();
       case clang::BO_NE:
-        return builder.create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
-                                          builder.getStringAttr("ne"), lhs,
-                                          rhs);
+        return builder
+            .create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
+                                builder.getStringAttr("ne"), *lhs, *rhs)
+            .getResult();
       case clang::BO_LAnd:
-        return builder.create<arc::AndOp>(loc, arc::BoolType::get(&mlirCtx),
-                                          lhs, rhs);
+        return builder
+            .create<arc::AndOp>(loc, arc::BoolType::get(&mlirCtx), *lhs, *rhs)
+            .getResult();
       case clang::BO_LOr:
-        return builder.create<arc::OrOp>(loc, arc::BoolType::get(&mlirCtx), lhs,
-                                         rhs);
+        return builder
+            .create<arc::OrOp>(loc, arc::BoolType::get(&mlirCtx), *lhs, *rhs)
+            .getResult();
       default:
         llvm::errs() << "warning: unhandled binary operator opcode "
-                     << binOp->getOpcodeStr() << "\n";
-        break;
+                     << binOp->getOpcodeStr()
+                     << ", lowering failed\n";
+        DiagnosticTracker::recordFallback();
+        return std::nullopt;
       }
     }
 
     if (const auto* unaryOp = llvm::dyn_cast<clang::UnaryOperator>(expr)) {
       auto operand = lowerExpr(unaryOp->getSubExpr(), valueMap);
+      if (!operand) {
+        return std::nullopt;
+      }
       switch (unaryOp->getOpcode()) {
       case clang::UO_LNot:
-        return builder.create<arc::NotOp>(loc, arc::BoolType::get(&mlirCtx),
-                                          operand);
+        return builder
+            .create<arc::NotOp>(loc, arc::BoolType::get(&mlirCtx), *operand)
+            .getResult();
       case clang::UO_Minus: {
         auto zero = builder.create<arc::ConstantOp>(
             loc, arc::I32Type::get(&mlirCtx), builder.getI32IntegerAttr(0));
-        return builder.create<arc::SubOp>(loc, operand.getType(), zero,
-                                          operand);
+        return builder
+            .create<arc::SubOp>(loc, operand->getType(), zero, *operand)
+            .getResult();
       }
       default:
         break;
       }
     }
 
-    // Fallback: return zero constant with diagnostic
-    llvm::errs() << "warning: unrecognized expression in lowering, using zero "
-                    "fallback\n";
+    // Propagate failure instead of polluting the MLIR module with zero
+    // constants.  DiagnosticTracker records the count for the error message.
+    llvm::errs() << "warning: unrecognized expression in lowering\n";
     DiagnosticTracker::recordFallback();
-    return builder.create<arc::ConstantOp>(loc, arc::I32Type::get(&mlirCtx),
-                                           builder.getI32IntegerAttr(0));
+    return std::nullopt;
   }
 
   std::string serializeExpr(const ContractExprPtr& expr) {
@@ -324,48 +407,8 @@ private:
     case ContractExprKind::ResultRef:
       return "\\result";
     case ContractExprKind::BinaryOp: {
-      std::string op;
-      switch (expr->binaryOp) {
-      case BinaryOpKind::Add:
-        op = "+";
-        break;
-      case BinaryOpKind::Sub:
-        op = "-";
-        break;
-      case BinaryOpKind::Mul:
-        op = "*";
-        break;
-      case BinaryOpKind::Div:
-        op = "/";
-        break;
-      case BinaryOpKind::Rem:
-        op = "%";
-        break;
-      case BinaryOpKind::Lt:
-        op = "<";
-        break;
-      case BinaryOpKind::Le:
-        op = "<=";
-        break;
-      case BinaryOpKind::Gt:
-        op = ">";
-        break;
-      case BinaryOpKind::Ge:
-        op = ">=";
-        break;
-      case BinaryOpKind::Eq:
-        op = "==";
-        break;
-      case BinaryOpKind::Ne:
-        op = "!=";
-        break;
-      case BinaryOpKind::And:
-        op = "&&";
-        break;
-      case BinaryOpKind::Or:
-        op = "||";
-        break;
-      }
+      auto op =
+          BINARY_OP_STRINGS[static_cast<size_t>(expr->binaryOp)];
       return "(" + serializeExpr(expr->left) + " " + op + " " +
              serializeExpr(expr->right) + ")";
     }

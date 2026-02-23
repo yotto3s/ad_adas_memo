@@ -259,5 +259,109 @@ TEST(SubsetEnforcerTest, RejectsNamespacedFunction) {
   EXPECT_TRUE(foundNamespace);
 }
 
+// [W2] Reject for loop
+TEST(SubsetEnforcerTest, RejectsForLoop) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t sum(int32_t n) {
+      int32_t s = 0;
+      for (int32_t i = 0; i < n; i = i + 1) {
+        s = s + i;
+      }
+      return s;
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundFor = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("for loop") != std::string::npos) {
+      foundFor = true;
+    }
+  }
+  EXPECT_TRUE(foundFor);
+}
+
+// [W2] Reject while loop
+TEST(SubsetEnforcerTest, RejectsWhileLoop) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t count(int32_t n) {
+      int32_t i = 0;
+      while (i < n) {
+        i = i + 1;
+      }
+      return i;
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundWhile = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("while loop") != std::string::npos) {
+      foundWhile = true;
+    }
+  }
+  EXPECT_TRUE(foundWhile);
+}
+
+// [W2] Reject do-while loop
+TEST(SubsetEnforcerTest, RejectsDoWhileLoop) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t count(int32_t n) {
+      int32_t i = 0;
+      do {
+        i = i + 1;
+      } while (i < n);
+      return i;
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundDoWhile = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("do-while") != std::string::npos) {
+      foundDoWhile = true;
+    }
+  }
+  EXPECT_TRUE(foundDoWhile);
+}
+
+// [W2] Reject switch statement
+TEST(SubsetEnforcerTest, RejectsSwitchStatement) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t classify(int32_t x) {
+      switch (x) {
+        case 0: return 0;
+        default: return 1;
+      }
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundSwitch = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("switch") != std::string::npos) {
+      foundSwitch = true;
+    }
+  }
+  EXPECT_TRUE(foundSwitch);
+}
+
+// [W2] Reject function calls
+TEST(SubsetEnforcerTest, RejectsFunctionCalls) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t helper(int32_t x) { return x; }
+    int32_t caller(int32_t x) { return helper(x); }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundCall = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("function call") != std::string::npos) {
+      foundCall = true;
+    }
+  }
+  EXPECT_TRUE(foundCall);
+}
+
 } // namespace
 } // namespace arcanum

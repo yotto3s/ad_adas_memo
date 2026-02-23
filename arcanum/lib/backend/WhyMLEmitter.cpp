@@ -5,16 +5,21 @@
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Location.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <sstream>
+#include <string>
 
 namespace arcanum {
 namespace {
 
 /// Token string for \result in contract expressions.
 constexpr llvm::StringLiteral RESULT_TOKEN("\\result");
+
+/// String representations of INT32 bounds for overflow assertions.
+constexpr llvm::StringLiteral INT32_MIN_STR("-2147483648");
+constexpr llvm::StringLiteral INT32_MAX_STR("2147483647");
 
 /// Convert a contract expression string from Arc format to WhyML format.
 /// Transforms: \result -> result, && -> /\, || -> \/, etc.
@@ -119,6 +124,8 @@ public:
   std::optional<WhyMLResult> emit() {
     WhyMLResult result;
 
+    // The walk callback captures `result` by reference.  This is safe
+    // because walk() executes synchronously and result outlives the call.
     module.walk([&](arc::FuncOp funcOp) { emitFunction(funcOp, result); });
 
     if (result.whymlText.empty()) {
@@ -157,13 +164,15 @@ private:
   }
 
   void emitFunction(arc::FuncOp funcOp, WhyMLResult& result) {
-    std::ostringstream out;
+    std::string outBuf;
+    llvm::raw_string_ostream out(outBuf);
     auto funcName = funcOp.getSymName().str();
     auto moduleName = toModuleName(funcName);
 
-    // Scan types to decide which Why3 modules are needed
+    // Scan types and ops to decide which Why3 modules are needed
     auto funcType = funcOp.getFunctionType();
     bool needsBool = false;
+    bool needsComputerDivision = false;
     auto& entryBlock = funcOp.getBody().front();
     for (unsigned i = 0; i < entryBlock.getNumArguments(); ++i) {
       if (mlir::isa<arc::BoolType>(entryBlock.getArgument(i).getType())) {
@@ -174,11 +183,20 @@ private:
         mlir::isa<arc::BoolType>(funcType.getResult(0))) {
       needsBool = true;
     }
+    // Scan for DivOp/RemOp to determine if ComputerDivision is needed
+    funcOp.walk([&](mlir::Operation* op) {
+      if (llvm::isa<arc::DivOp>(op) || llvm::isa<arc::RemOp>(op)) {
+        needsComputerDivision = true;
+      }
+    });
 
     out << "module " << moduleName << "\n";
     out << "  use int.Int\n";
     if (needsBool) {
       out << "  use bool.Bool\n";
+    }
+    if (needsComputerDivision) {
+      out << "  use int.ComputerDivision\n";
     }
     out << "\n";
 
@@ -220,7 +238,7 @@ private:
 
     out << "\nend\n\n";
 
-    result.whymlText += out.str();
+    result.whymlText += outBuf;
 
     // Populate location map
     auto loc = funcOp.getLoc();
@@ -231,9 +249,10 @@ private:
       entry.line = fileLoc.getLine();
     }
     result.locationMap[funcName] = entry;
+    result.moduleToFuncMap[moduleName] = funcName;
   }
 
-  void emitBody(arc::FuncOp funcOp, std::ostringstream& out) {
+  void emitBody(arc::FuncOp funcOp, llvm::raw_string_ostream& out) {
     auto& entryBlock = funcOp.getBody().front();
     // Map MLIR values to WhyML variable names
     llvm::DenseMap<mlir::Value, std::string> nameMap;
@@ -254,28 +273,31 @@ private:
   /// Emit a binary arithmetic op with an i32 overflow assertion.
   void emitArithWithOverflowCheck(
       mlir::Value result, mlir::Value lhsVal, mlir::Value rhsVal,
-      const std::string& whymlOp, std::ostringstream& out,
+      const std::string& whymlOp, llvm::raw_string_ostream& out,
       llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto lhs = getExpr(lhsVal, nameMap);
     auto rhs = getExpr(rhsVal, nameMap);
     auto expr = "(" + lhs + " " + whymlOp + " " + rhs + ")";
-    out << "    assert { -2147483648 <= " << expr << " /\\ " << expr
-        << " <= 2147483647 };\n";
+    out << "    assert { " << INT32_MIN_STR.data() << " <= " << expr
+        << " /\\ " << expr << " <= " << INT32_MAX_STR.data() << " };\n";
     nameMap[result] = expr;
   }
 
-  /// Emit a division-like op with a divisor-not-zero assertion.
+  /// Emit a division-like op with divisor-not-zero and overflow assertions.
   void emitDivLikeOp(mlir::Value result, mlir::Value lhsVal, mlir::Value rhsVal,
-                     const std::string& whymlFunc, std::ostringstream& out,
+                     const std::string& whymlFunc, llvm::raw_string_ostream& out,
                      llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto lhs = getExpr(lhsVal, nameMap);
     auto rhs = getExpr(rhsVal, nameMap);
     auto expr = "(" + whymlFunc + " " + lhs + " " + rhs + ")";
     out << "    assert { " << rhs << " <> 0 };\n";
+    // Overflow check: INT_MIN / -1 overflows in C (undefined behavior)
+    out << "    assert { " << INT32_MIN_STR.data() << " <= " << expr
+        << " /\\ " << expr << " <= " << INT32_MAX_STR.data() << " };\n";
     nameMap[result] = expr;
   }
 
-  void emitOp(mlir::Operation& op, std::ostringstream& out,
+  void emitOp(mlir::Operation& op, llvm::raw_string_ostream& out,
               llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     if (auto constOp = llvm::dyn_cast<arc::ConstantOp>(&op)) {
       auto attr = constOp.getValue();
@@ -304,26 +326,21 @@ private:
     } else if (auto cmpOp = llvm::dyn_cast<arc::CmpOp>(&op)) {
       auto lhs = getExpr(cmpOp.getLhs(), nameMap);
       auto rhs = getExpr(cmpOp.getRhs(), nameMap);
-      auto pred = cmpOp.getPredicate().str();
-      std::string whymlOp;
-      if (pred == "lt") {
-        whymlOp = "<";
-      } else if (pred == "le") {
-        whymlOp = "<=";
-      } else if (pred == "gt") {
-        whymlOp = ">";
-      } else if (pred == "ge") {
-        whymlOp = ">=";
-      } else if (pred == "eq") {
-        whymlOp = "=";
-      } else if (pred == "ne") {
-        whymlOp = "<>";
-      } else {
+      auto pred = cmpOp.getPredicate();
+      auto whymlOp = llvm::StringSwitch<llvm::StringRef>(pred)
+                         .Case("lt", "<")
+                         .Case("le", "<=")
+                         .Case("gt", ">")
+                         .Case("ge", ">=")
+                         .Case("eq", "=")
+                         .Case("ne", "<>")
+                         .Default("=");
+      if (whymlOp == "=" && pred != "eq") {
         llvm::errs() << "warning: unknown comparison predicate '" << pred
                      << "', defaulting to '='\n";
-        whymlOp = "=";
       }
-      nameMap[cmpOp.getResult()] = "(" + lhs + " " + whymlOp + " " + rhs + ")";
+      nameMap[cmpOp.getResult()] =
+          "(" + lhs + " " + whymlOp.str() + " " + rhs + ")";
     } else if (auto andOp = llvm::dyn_cast<arc::AndOp>(&op)) {
       auto lhs = getExpr(andOp.getLhs(), nameMap);
       auto rhs = getExpr(andOp.getRhs(), nameMap);
@@ -345,25 +362,65 @@ private:
       auto name = varOp.getName().str();
       out << "    let " << name << " = " << init << " in\n";
       nameMap[varOp.getResult()] = name;
+    } else if (auto assignOp = llvm::dyn_cast<arc::AssignOp>(&op)) {
+      auto value = getExpr(assignOp.getValue(), nameMap);
+      // In WhyML, we model reassignment via a let-rebinding.
+      // Look up the original variable name from the defining VarOp,
+      // rather than the current nameMap expression which may be a
+      // compound expression (CR-4: prevents invalid WhyML like
+      // "let (a + 1) = ...").
+      // Note: getDefiningOp() is O(n) per assignment (walks the def chain).
+      // Acceptable for Slice 1 with small functions; future slices should
+      // consider a direct VarOp lookup map to avoid quadratic behavior.
+      std::string varName;
+      if (auto defOp = assignOp.getTarget().getDefiningOp()) {
+        if (auto varOp = llvm::dyn_cast<arc::VarOp>(defOp)) {
+          varName = varOp.getName().str();
+        }
+      }
+      if (varName.empty()) {
+        // Fallback: use the nameMap expression (may not be a valid
+        // identifier, but this path is unlikely in well-formed Slice 1 code).
+        varName = getExpr(assignOp.getTarget(), nameMap);
+      }
+      out << "    let " << varName << " = " << value << " in\n";
+      // Update nameMap: the target now refers to the new value expression
+      nameMap[assignOp.getTarget()] = value;
     } else if (auto ifOp = llvm::dyn_cast<arc::IfOp>(&op)) {
       auto cond = getExpr(ifOp.getCondition(), nameMap);
       out << "    if " << cond << " then\n";
+      // Limitation (Slice 1): nameMap is shared between then/else branches.
+      // Mutations in the then branch (e.g., variable declarations or
+      // assignments) leak into the else branch.  This mirrors the same
+      // limitation in Lowering.cpp (valueMap sharing).  For correct
+      // semantics, future slices should copy nameMap before each branch
+      // and merge results afterward (phi-node style).  SubsetEnforcer's
+      // early-return check partially mitigates this.
+
       // Emit then region
       if (!ifOp.getThenRegion().empty()) {
         for (auto& thenOp : ifOp.getThenRegion().front().getOperations()) {
           emitOp(thenOp, out, nameMap);
         }
       }
-      // Emit else region
+      // Emit else region (always required in WhyML expression syntax)
       if (!ifOp.getElseRegion().empty()) {
         out << "    else\n";
         for (auto& elseOp : ifOp.getElseRegion().front().getOperations()) {
           emitOp(elseOp, out, nameMap);
         }
+      } else {
+        // WhyML requires an else clause; emit unit for empty else
+        out << "    else\n";
+        out << "    ()\n";
       }
     }
   }
 
+  // Defensive fallback: "?unknown?" should never appear in well-formed
+  // Slice 1 output.  If it does, it indicates a bug in the lowering or
+  // emission pipeline (an MLIR value was created but not registered in
+  // nameMap).  Not tested directly; covered implicitly by integration tests.
   std::string getExpr(mlir::Value val,
                       llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto it = nameMap.find(val);

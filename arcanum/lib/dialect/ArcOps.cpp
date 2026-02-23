@@ -127,7 +127,9 @@ void RemOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }
 
 mlir::ParseResult CmpOp::parse(mlir::OpAsmParser& parser,
                                mlir::OperationState& result) {
-  return mlir::failure(); // TODO: implement full parser
+  // TODO: implement full parser.  Round-trip testing (print -> parse -> print)
+  // is deferred to a future slice.  Currently only print() is exercised.
+  return mlir::failure();
 }
 
 void CmpOp::print(mlir::OpAsmPrinter& printer) {
@@ -176,7 +178,9 @@ void NotOp::print(mlir::OpAsmPrinter& printer) {
 
 mlir::ParseResult VarOp::parse(mlir::OpAsmParser& parser,
                                mlir::OperationState& result) {
-  return mlir::failure(); // TODO: implement full parser
+  // TODO: implement full parser.  Round-trip testing is deferred to a
+  // future slice.  Currently only print() is exercised.
+  return mlir::failure();
 }
 
 void VarOp::print(mlir::OpAsmPrinter& printer) {
@@ -191,7 +195,9 @@ void VarOp::print(mlir::OpAsmPrinter& printer) {
 
 mlir::ParseResult AssignOp::parse(mlir::OpAsmParser& parser,
                                   mlir::OperationState& result) {
-  return mlir::failure(); // TODO: implement full parser
+  // TODO: implement full parser.  Round-trip testing is deferred to a
+  // future slice.  Currently only print() is exercised.
+  return mlir::failure();
 }
 
 void AssignOp::print(mlir::OpAsmPrinter& printer) {
@@ -230,7 +236,9 @@ void ReturnOp::print(mlir::OpAsmPrinter& printer) {
 
 mlir::ParseResult IfOp::parse(mlir::OpAsmParser& parser,
                               mlir::OperationState& result) {
-  return mlir::failure(); // TODO: implement full parser
+  // TODO: implement full parser.  Round-trip testing is deferred to a
+  // future slice.  Currently only print() is exercised.
+  return mlir::failure();
 }
 
 void IfOp::print(mlir::OpAsmPrinter& printer) {

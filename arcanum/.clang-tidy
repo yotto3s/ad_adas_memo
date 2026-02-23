@@ -12,7 +12,7 @@ Checks: >
   -readability-convert-member-functions-to-static,
   -performance-enum-size
 
-HeaderFilterRegex: '^.*/arcanum/src/.*\.h$'
+HeaderFilterRegex: '^.*/arcanum/(include|lib|tools)/.*\.h$'
 
 WarningsAsErrors: ''
 

@@ -14,8 +14,8 @@ if [[ "${1:-}" == "--check" ]]; then
   shift
 fi
 
-# Find all .cpp and .h files in src/ and tests/
-find "${ARCANUM_DIR}/src" "${ARCANUM_DIR}/tests" \
+# Find all .cpp and .h files in lib/, include/, tools/, and tests/
+find "${ARCANUM_DIR}/lib" "${ARCANUM_DIR}/include" "${ARCANUM_DIR}/tools" "${ARCANUM_DIR}/tests" \
   \( -name '*.cpp' -o -name '*.h' \) \
   -print0 \
   | xargs -0 clang-format "${CHECK_ARGS[@]}" -i

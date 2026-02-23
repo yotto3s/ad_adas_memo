@@ -7,6 +7,7 @@
 #include "clang/Basic/SourceManager.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cctype>
 #include <optional>
@@ -133,47 +134,25 @@ private:
       return nullptr;
     }
     skipWhitespace();
-    if (matchString("<=")) {
-      auto rhs = parseAddSub();
-      if (!rhs) {
-        return nullptr;
+    // Data-driven comparison operator table.  Multi-character operators
+    // must appear before their single-character prefixes (e.g. "<=" before "<").
+    struct CompOp {
+      llvm::StringLiteral token;
+      BinaryOpKind kind;
+    };
+    static constexpr CompOp compOps[] = {
+        {"<=", BinaryOpKind::Le}, {">=", BinaryOpKind::Ge},
+        {"==", BinaryOpKind::Eq}, {"!=", BinaryOpKind::Ne},
+        {"<", BinaryOpKind::Lt},  {">", BinaryOpKind::Gt},
+    };
+    for (const auto& op : compOps) {
+      if (matchString(op.token)) {
+        auto rhs = parseAddSub();
+        if (!rhs) {
+          return nullptr;
+        }
+        return ContractExpr::makeBinaryOp(op.kind, lhs, rhs);
       }
-      return ContractExpr::makeBinaryOp(BinaryOpKind::Le, lhs, rhs);
-    }
-    if (matchString(">=")) {
-      auto rhs = parseAddSub();
-      if (!rhs) {
-        return nullptr;
-      }
-      return ContractExpr::makeBinaryOp(BinaryOpKind::Ge, lhs, rhs);
-    }
-    if (matchString("==")) {
-      auto rhs = parseAddSub();
-      if (!rhs) {
-        return nullptr;
-      }
-      return ContractExpr::makeBinaryOp(BinaryOpKind::Eq, lhs, rhs);
-    }
-    if (matchString("!=")) {
-      auto rhs = parseAddSub();
-      if (!rhs) {
-        return nullptr;
-      }
-      return ContractExpr::makeBinaryOp(BinaryOpKind::Ne, lhs, rhs);
-    }
-    if (matchString("<")) {
-      auto rhs = parseAddSub();
-      if (!rhs) {
-        return nullptr;
-      }
-      return ContractExpr::makeBinaryOp(BinaryOpKind::Lt, lhs, rhs);
-    }
-    if (matchString(">")) {
-      auto rhs = parseAddSub();
-      if (!rhs) {
-        return nullptr;
-      }
-      return ContractExpr::makeBinaryOp(BinaryOpKind::Gt, lhs, rhs);
     }
     return lhs;
   }
@@ -267,6 +246,9 @@ private:
       skipWhitespace();
       if (pos < text.size() && text[pos] == ')') {
         ++pos;
+      } else {
+        // Missing closing parenthesis -- return nullptr (parse error)
+        return nullptr;
       }
       return expr;
     }
@@ -274,12 +256,26 @@ private:
     if (matchString("\\result")) {
       return ContractExpr::makeResultRef();
     }
-    // true/false
+    // true/false (with word boundary check)
     if (matchString("true")) {
-      return ContractExpr::makeBoolLiteral(true);
+      // Check that the next character is not alphanumeric or underscore
+      if (pos < text.size() &&
+          ((std::isalnum(static_cast<unsigned char>(text[pos])) != 0) ||
+           text[pos] == '_')) {
+        // Not a standalone "true" keyword -- backtrack and parse as identifier
+        pos -= 4; // length of "true"
+      } else {
+        return ContractExpr::makeBoolLiteral(true);
+      }
     }
     if (matchString("false")) {
-      return ContractExpr::makeBoolLiteral(false);
+      if (pos < text.size() &&
+          ((std::isalnum(static_cast<unsigned char>(text[pos])) != 0) ||
+           text[pos] == '_')) {
+        pos -= 5; // length of "false"
+      } else {
+        return ContractExpr::makeBoolLiteral(false);
+      }
     }
     // Integer literal
     if (std::isdigit(static_cast<unsigned char>(text[pos])) != 0) {
@@ -343,7 +339,12 @@ parseContracts(clang::ASTContext& context) {
   std::map<const clang::FunctionDecl*, ContractInfo> result;
   auto& sm = context.getSourceManager();
 
-  // Iterate over all function declarations
+  // Iterate over top-level TU declarations only.
+  // IMPORTANT: This must iterate the same declaration list as
+  // ArcLowering::lower() in Lowering.cpp, because the contract map is
+  // keyed by FunctionDecl pointer identity.  Both functions must agree
+  // on which declarations they process.  SubsetEnforcer also validates
+  // that only TU-level functions are accepted (rejects namespaced functions).
   for (auto* decl : context.getTranslationUnitDecl()->decls()) {
     auto* funcDecl = llvm::dyn_cast<clang::FunctionDecl>(decl);
     if ((funcDecl == nullptr) || !funcDecl->hasBody()) {
@@ -363,6 +364,13 @@ parseContracts(clang::ASTContext& context) {
       continue;
     }
 
+    auto funcName = funcDecl->getNameAsString();
+    auto funcLoc = funcDecl->getLocation();
+    unsigned funcLine = 0;
+    if (funcLoc.isValid()) {
+      funcLine = sm.getPresumedLineNumber(funcLoc);
+    }
+
     ContractInfo info;
     for (const auto& line : annotationLines) {
       llvm::StringRef lineRef(line);
@@ -371,12 +379,22 @@ parseContracts(clang::ASTContext& context) {
         ExprParser parser(exprText);
         if (auto expr = parser.parse()) {
           info.preconditions.push_back(std::move(expr));
+        } else {
+          llvm::errs() << "warning: in function '" << funcName << "' (line "
+                       << funcLine
+                       << "): failed to parse 'requires' clause: '" << exprText
+                       << "' (contract will be ignored)\n";
         }
       } else if (lineRef.starts_with(ENSURES_PREFIX)) {
         auto exprText = lineRef.drop_front(ENSURES_PREFIX.size()).trim();
         ExprParser parser(exprText);
         if (auto expr = parser.parse()) {
           info.postconditions.push_back(std::move(expr));
+        } else {
+          llvm::errs() << "warning: in function '" << funcName << "' (line "
+                       << funcLine
+                       << "): failed to parse 'ensures' clause: '" << exprText
+                       << "' (contract will be ignored)\n";
         }
       }
     }

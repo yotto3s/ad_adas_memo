@@ -122,6 +122,59 @@ public:
     return true;
   }
 
+  bool VisitForStmt(clang::ForStmt* stmt) {
+    addDiagnostic(stmt->getBeginLoc(),
+                  "for loops are not allowed in Slice 1");
+    return true;
+  }
+
+  bool VisitWhileStmt(clang::WhileStmt* stmt) {
+    addDiagnostic(stmt->getBeginLoc(),
+                  "while loops are not allowed in Slice 1");
+    return true;
+  }
+
+  bool VisitDoStmt(clang::DoStmt* stmt) {
+    addDiagnostic(stmt->getBeginLoc(),
+                  "do-while loops are not allowed in Slice 1");
+    return true;
+  }
+
+  bool VisitSwitchStmt(clang::SwitchStmt* stmt) {
+    addDiagnostic(stmt->getBeginLoc(),
+                  "switch statements are not allowed in Slice 1");
+    return true;
+  }
+
+  bool VisitCXXForRangeStmt(clang::CXXForRangeStmt* stmt) {
+    addDiagnostic(stmt->getBeginLoc(),
+                  "range-based for loops are not allowed in Slice 1");
+    return true;
+  }
+
+  bool VisitCallExpr(clang::CallExpr* expr) {
+    // Skip calls in system headers (e.g., from <cstdint>)
+    if (expr->getBeginLoc().isValid() &&
+        ctx.getSourceManager().isInSystemHeader(expr->getBeginLoc())) {
+      return true;
+    }
+    // Skip implicit/builtin calls
+    if (const auto* callee = expr->getDirectCallee()) {
+      if (callee->isImplicit() || callee->getBuiltinID() != 0) {
+        return true;
+      }
+    }
+    // Operator calls are not allowed
+    if (llvm::isa<clang::CXXOperatorCallExpr>(expr)) {
+      addDiagnostic(expr->getBeginLoc(),
+                    "operator calls are not allowed in Slice 1");
+      return true;
+    }
+    addDiagnostic(expr->getBeginLoc(),
+                  "function calls are not allowed in Slice 1");
+    return true;
+  }
+
 private:
   /// Check whether a statement (or any nested statement) contains a return.
   bool containsReturn(const clang::Stmt* stmt) {

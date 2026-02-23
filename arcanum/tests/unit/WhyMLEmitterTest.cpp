@@ -283,5 +283,192 @@ TEST(WhyMLEmitterTest, UsesOriginalParameterNames) {
   EXPECT_EQ(result->whymlText.find("arg0"), std::string::npos);
 }
 
+// [W17/TC-7] Test contractToWhyML translations for ||, !=, ==, !
+TEST(WhyMLEmitterTest, ContractOrTranslation) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: a >= 0 || a <= 10
+    int32_t foo(int32_t a) { return a; }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  // || should become \/ in WhyML
+  EXPECT_NE(result->whymlText.find("\\/"), std::string::npos)
+      << "WhyML output missing \\/ for ||.  Text:\n"
+      << result->whymlText;
+}
+
+TEST(WhyMLEmitterTest, ContractNotEqualTranslation) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: a != 0
+    int32_t foo(int32_t a) { return a; }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  // != should become <> in WhyML
+  EXPECT_NE(result->whymlText.find("<>"), std::string::npos)
+      << "WhyML output missing <> for !=.  Text:\n"
+      << result->whymlText;
+}
+
+TEST(WhyMLEmitterTest, ContractEqualTranslation) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ ensures: \result == 0
+    int32_t foo(int32_t a) { return a; }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  // == should become = in WhyML (no double-equal in WhyML)
+  // Check that the ensures clause contains "= 0" (single equals)
+  auto ensPos = result->whymlText.find("ensures");
+  ASSERT_NE(ensPos, std::string::npos);
+  auto afterEns = result->whymlText.substr(ensPos);
+  // Should NOT have "==" in WhyML
+  EXPECT_EQ(afterEns.find("=="), std::string::npos)
+      << "WhyML output still contains == (should be =).  Text:\n"
+      << result->whymlText;
+}
+
+TEST(WhyMLEmitterTest, ContractNotTranslation) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: !false
+    int32_t foo(int32_t a) { return a; }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  // ! should become "not " in WhyML
+  EXPECT_NE(result->whymlText.find("not "), std::string::npos)
+      << "WhyML output missing 'not ' for !.  Text:\n"
+      << result->whymlText;
+}
+
+// [W18/TC-12] Test remainder (%) WhyML emission
+TEST(WhyMLEmitterTest, EmitsRemainderWithModAndDivisorCheck) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    int32_t mymod(int32_t a, int32_t b) { return a % b; }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  // Should contain "mod" and divisor assertion
+  EXPECT_NE(result->whymlText.find("mod"), std::string::npos)
+      << "WhyML output missing 'mod'.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("<> 0"), std::string::npos)
+      << "WhyML output missing divisor check.  Text:\n"
+      << result->whymlText;
+}
+
+// [W19/TC-9] Test single Failure obligation report
+TEST(WhyMLEmitterTest, EmitsComputerDivisionImport) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    int32_t mydiv(int32_t a, int32_t b) { return a / b; }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("use int.ComputerDivision"),
+            std::string::npos)
+      << "WhyML output missing ComputerDivision import.  Text:\n"
+      << result->whymlText;
+}
+
+// TC-13: Test CamelCase function name produces expected module name.
+// A CamelCase name has no underscores, so toModuleName() should
+// capitalize only the first letter and leave the rest unchanged.
+TEST(WhyMLEmitterTest, CamelCaseFuncModuleName) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ ensures: \result >= 0
+    int32_t myFunc(int32_t a) { return a; }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  // "myFunc" has no underscores; toModuleName capitalizes first letter -> "MyFunc"
+  EXPECT_NE(result->whymlText.find("module MyFunc"), std::string::npos)
+      << "Expected 'module MyFunc' in WhyML output.  Text:\n"
+      << result->whymlText;
+}
+
 } // namespace
 } // namespace arcanum

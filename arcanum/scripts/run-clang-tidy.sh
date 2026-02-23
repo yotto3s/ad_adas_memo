@@ -37,8 +37,8 @@ sed -e 's/-fno-canonical-system-headers//g' \
     -e 's/-fstack-usage//g' \
     "${BUILD_DIR}/compile_commands.json" > "${FILTERED_DIR}/compile_commands.json"
 
-# Find .cpp files in src/ and run clang-tidy in parallel
-find "${ARCANUM_DIR}/src" -name '*.cpp' -print0 \
+# Find .cpp files in lib/ and tools/ and run clang-tidy in parallel
+find "${ARCANUM_DIR}/lib" "${ARCANUM_DIR}/tools" -name '*.cpp' -print0 \
   | xargs -0 -P"$(nproc)" -I{} \
     clang-tidy \
       -p "${FILTERED_DIR}" \

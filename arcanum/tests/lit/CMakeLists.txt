@@ -69,7 +69,7 @@ configure_file(
 )
 
 # Copy test files to build directory
-set(TEST_SUBDIRS subset-check verify)
+set(TEST_SUBDIRS subset-check verify error-paths)
 foreach(SUBDIR ${TEST_SUBDIRS})
     file(GLOB TEST_FILES "${CMAKE_CURRENT_SOURCE_DIR}/${SUBDIR}/*.cpp")
     foreach(TEST_FILE ${TEST_FILES})

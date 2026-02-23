@@ -2,6 +2,7 @@
 #define ARCANUM_BACKEND_WHY3RUNNER_H
 
 #include <chrono>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -22,20 +23,27 @@ struct ObligationResult {
   ObligationStatus status = ObligationStatus::Unknown;
   std::chrono::milliseconds duration{0};
   /// Name of the function this obligation belongs to.
-  /// Populated when multi-function reporting is implemented; empty for now.
-  /// This field is a data model preparation for grouping obligations by
-  /// function in future slices (see CR-8).
+  /// Populated by parseWhy3Output() from Why3's Theory context lines.
+  /// The module name (CamelCase) is converted back to the original
+  /// snake_case function name for matching against the location map.
   std::string functionName;
 };
 
 /// Run Why3 on a .mlw file with the given solver and timeout.
 /// Returns per-obligation results parsed from Why3 stdout.
+/// The moduleToFuncMap maps WhyML module names to original C++ function names,
+/// used to attribute proof obligations to source functions.
 std::vector<ObligationResult>
-runWhy3(const std::string& mlwPath, const std::string& why3Binary = "why3",
+runWhy3(const std::string& mlwPath,
+        const std::map<std::string, std::string>& moduleToFuncMap = {},
+        const std::string& why3Binary = "why3",
         int timeoutSeconds = DEFAULT_TIMEOUT_SECONDS);
 
 /// Parse Why3 stdout output into obligation results (exposed for testing).
-std::vector<ObligationResult> parseWhy3Output(const std::string& output);
+/// The moduleToFuncMap maps WhyML module names to original C++ function names.
+std::vector<ObligationResult>
+parseWhy3Output(const std::string& output,
+                const std::map<std::string, std::string>& moduleToFuncMap = {});
 
 } // namespace arcanum
 

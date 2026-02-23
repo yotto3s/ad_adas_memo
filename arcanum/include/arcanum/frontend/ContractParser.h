@@ -22,6 +22,11 @@ enum class ContractExprKind {
 };
 
 struct ContractExpr;
+/// shared_ptr is used here (rather than unique_ptr) to simplify the
+/// recursive-descent parser's factory methods and intermediate
+/// construction.  The tree is never actually shared at runtime -- each
+/// expression has a single owner (ContractInfo -> lowering).  Consider
+/// migrating to unique_ptr in a future slice for clearer ownership.
 using ContractExprPtr = std::shared_ptr<ContractExpr>;
 
 enum class BinaryOpKind {
@@ -45,6 +50,10 @@ enum class UnaryOpKind {
   Neg,
 };
 
+// TODO: Refactor ContractExpr to use std::variant<IntLiteralData,
+// BoolLiteralData, ParamRefData, ...> instead of a flat struct with
+// unused fields per kind.  The current "fat node" layout wastes memory
+// and relies on the caller to only access fields matching `kind`.
 struct ContractExpr {
   ContractExprKind kind;
 
@@ -82,6 +91,10 @@ struct ContractInfo {
 
 /// Parse //@ requires: and //@ ensures: annotations from raw comments,
 /// associating them with the FunctionDecl they immediately precede.
+///
+/// Error contract: Never fails at the map level.  Malformed contract
+/// expressions are silently dropped with a warning to llvm::errs().
+/// The caller receives only successfully parsed contracts.
 std::map<const clang::FunctionDecl*, ContractInfo>
 parseContracts(clang::ASTContext& context);
 

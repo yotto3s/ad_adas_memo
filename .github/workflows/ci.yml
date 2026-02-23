@@ -57,7 +57,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ccache
-          key: ccache-${{ matrix.preset }}-${{ hashFiles('arcanum/src/**', 'arcanum/CMakeLists.txt') }}
+          key: ccache-${{ matrix.preset }}-${{ hashFiles('arcanum/lib/**', 'arcanum/include/**', 'arcanum/tools/**', 'arcanum/CMakeLists.txt') }}
           restore-keys: |
             ccache-${{ matrix.preset }}-
 

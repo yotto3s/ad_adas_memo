@@ -43,27 +43,27 @@ int main(int argc, const char** argv) {
       CommonOptionsParser::create(argc, argv, arcanumCategory);
   if (!expectedParser) {
     llvm::errs() << expectedParser.takeError();
-    return arcanum::ExitInternalError;
+    return static_cast<int>(arcanum::ExitCode::InternalError);
   }
   CommonOptionsParser& optionsParser = expectedParser.get();
 
   if (mode != "verify") {
     llvm::errs() << "error: unsupported mode '" << mode
                  << "' (only 'verify' is supported in Slice 1)\n";
-    return arcanum::ExitInternalError;
+    return static_cast<int>(arcanum::ExitCode::InternalError);
   }
 
   const auto& sourceFiles = optionsParser.getSourcePathList();
   if (sourceFiles.empty()) {
     llvm::errs() << "error: no input files\n";
-    return arcanum::ExitInternalError;
+    return static_cast<int>(arcanum::ExitCode::InternalError);
   }
 
   // Validate input files exist
   for (const auto& file : sourceFiles) {
     if (!llvm::sys::fs::exists(file)) {
       llvm::errs() << "error: file not found: " << file << "\n";
-      return arcanum::ExitInternalError;
+      return static_cast<int>(arcanum::ExitCode::InternalError);
     }
   }
 
@@ -82,7 +82,7 @@ int main(int argc, const char** argv) {
   int buildResult = tool.buildASTs(astUnits);
   if (buildResult != 0 || astUnits.empty() || !astUnits[0]) {
     llvm::errs() << "error: failed to parse input file\n";
-    return arcanum::ExitParseError;
+    return static_cast<int>(arcanum::ExitCode::ParseError);
   }
 
   auto& astContext = astUnits[0]->getASTContext();
@@ -93,7 +93,7 @@ int main(int argc, const char** argv) {
     for (const auto& diag : enforceResult.diagnostics) {
       llvm::errs() << diag << "\n";
     }
-    return arcanum::ExitSubsetViolation;
+    return static_cast<int>(arcanum::ExitCode::SubsetViolation);
   }
 
   // Stage 3: Contract Parser
@@ -105,40 +105,49 @@ int main(int argc, const char** argv) {
   auto arcModule = arcanum::lowerToArc(mlirContext, astContext, contracts);
   if (!arcModule) {
     llvm::errs() << "error: lowering to Arc MLIR failed\n";
-    return arcanum::ExitInternalError;
+    return static_cast<int>(arcanum::ExitCode::InternalError);
+  }
+
+  // Abort early if fallback substitutions occurred during lowering.
+  // Fallbacks produce fabricated zero values that make verification unsound.
+  // Check here (after Stage 4) to avoid wasting solver time in Stages 5-7.
+  if (arcanum::DiagnosticTracker::getFallbackCount() > 0) {
+    llvm::errs() << "error: " << arcanum::DiagnosticTracker::getFallbackCount()
+                 << " expression(s) used zero-constant fallback during "
+                    "lowering. Results would be unreliable.\n";
+    return static_cast<int>(arcanum::ExitCode::InternalError);
   }
 
   // Stage 5: MLIR Pass Manager
   if (arcanum::runPasses(*arcModule).failed()) {
     llvm::errs() << "error: MLIR verification failed\n";
-    return arcanum::ExitInternalError;
+    return static_cast<int>(arcanum::ExitCode::InternalError);
   }
 
   // Stage 6: WhyML Emitter
   auto whymlResult = arcanum::emitWhyML(*arcModule);
   if (!whymlResult) {
     llvm::errs() << "error: WhyML emission failed\n";
-    return arcanum::ExitInternalError;
+    return static_cast<int>(arcanum::ExitCode::InternalError);
   }
 
   // Stage 7: Why3 Runner
-  auto obligations = arcanum::runWhy3(whymlResult->filePath, why3Path, timeout);
+  auto obligations = arcanum::runWhy3(whymlResult->filePath,
+                                      whymlResult->moduleToFuncMap, why3Path,
+                                      timeout);
 
   // Clean up the temporary .mlw file created by the WhyML emitter.
   auto removeEc = llvm::sys::fs::remove(whymlResult->filePath);
-  (void)removeEc;
+  if (removeEc) {
+    llvm::errs() << "warning: could not remove temp file: "
+                 << whymlResult->filePath << "\n";
+  }
 
   // Stage 8: Report Generator
   auto report = arcanum::generateReport(obligations, whymlResult->locationMap);
   llvm::outs() << report.text;
-  if (arcanum::DiagnosticTracker::getFallbackCount() > 0) {
-    llvm::outs() << "\nWarning: "
-                 << arcanum::DiagnosticTracker::getFallbackCount()
-                 << " expression(s) used zero-constant fallback during "
-                    "lowering. Results may be unreliable.\n";
-  }
   llvm::outs() << "\n";
 
-  return report.allPassed ? arcanum::ExitSuccess
-                          : arcanum::ExitVerificationFailed;
+  return report.allPassed ? static_cast<int>(arcanum::ExitCode::Success)
+                          : static_cast<int>(arcanum::ExitCode::VerificationFailed);
 }

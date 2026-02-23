@@ -147,5 +147,129 @@ target_link_libraries(ReportGeneratorTest PRIVATE
 )
 gtest_discover_tests(ReportGeneratorTest)
 
+# --- BugHunterLoweringTest ---
+add_executable(BugHunterLoweringTest unit/BugHunterLoweringTest.cpp)
+target_include_directories(BugHunterLoweringTest SYSTEM PRIVATE
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+  ${ARCANUM_MLIR_INCLUDE_DIRS}
+  ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(BugHunterLoweringTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
+)
+target_link_libraries(BugHunterLoweringTest PRIVATE
+  ArcanumLowering
+  ArcanumFrontend
+  ArcDialect
+  gtest_main
+  clangTooling
+  MLIRIR
+)
+gtest_discover_tests(BugHunterLoweringTest)
+
+# --- BugHunterWhyMLEmitterTest ---
+add_executable(BugHunterWhyMLEmitterTest unit/BugHunterWhyMLEmitterTest.cpp)
+target_include_directories(BugHunterWhyMLEmitterTest SYSTEM PRIVATE
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+  ${ARCANUM_MLIR_INCLUDE_DIRS}
+  ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(BugHunterWhyMLEmitterTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
+)
+target_link_libraries(BugHunterWhyMLEmitterTest PRIVATE
+  ArcanumBackend
+  ArcanumLowering
+  ArcanumFrontend
+  ArcDialect
+  gtest_main
+  clangTooling
+  MLIRIR
+  LLVMSupport
+)
+gtest_discover_tests(BugHunterWhyMLEmitterTest)
+
+# --- BugHunterContractParserTest ---
+add_executable(BugHunterContractParserTest unit/BugHunterContractParserTest.cpp)
+target_include_directories(BugHunterContractParserTest SYSTEM PRIVATE
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+  ${ARCANUM_CLANG_INCLUDE_DIRS}
+)
+target_include_directories(BugHunterContractParserTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(BugHunterContractParserTest PRIVATE
+  ArcanumFrontend
+  gtest_main
+  clangTooling
+)
+gtest_discover_tests(BugHunterContractParserTest)
+
+# --- BugHunterReportGeneratorTest ---
+add_executable(BugHunterReportGeneratorTest unit/BugHunterReportGeneratorTest.cpp)
+target_include_directories(BugHunterReportGeneratorTest SYSTEM PRIVATE
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+  ${ARCANUM_MLIR_INCLUDE_DIRS}
+)
+target_include_directories(BugHunterReportGeneratorTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
+)
+target_link_libraries(BugHunterReportGeneratorTest PRIVATE
+  ArcanumReport
+  ArcanumBackend
+  ArcDialect
+  gtest_main
+  MLIRIR
+  LLVMSupport
+)
+gtest_discover_tests(BugHunterReportGeneratorTest)
+
+# --- PassesTest ---
+add_executable(PassesTest unit/PassesTest.cpp)
+target_include_directories(PassesTest SYSTEM PRIVATE
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+  ${ARCANUM_MLIR_INCLUDE_DIRS}
+)
+target_include_directories(PassesTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/include
+)
+target_link_libraries(PassesTest PRIVATE
+  ArcanumPasses
+  ArcDialect
+  gtest_main
+  MLIRIR
+  MLIRPass
+)
+gtest_discover_tests(PassesTest)
+
+# --- DiagnosticTrackerTest ---
+add_executable(DiagnosticTrackerTest unit/DiagnosticTrackerTest.cpp)
+target_include_directories(DiagnosticTrackerTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(DiagnosticTrackerTest PRIVATE
+  gtest_main
+)
+gtest_discover_tests(DiagnosticTrackerTest)
+
+# --- Why3RunnerRunTest ---
+add_executable(Why3RunnerRunTest unit/Why3RunnerRunTest.cpp)
+target_include_directories(Why3RunnerRunTest SYSTEM PRIVATE
+  ${ARCANUM_LLVM_INCLUDE_DIRS}
+)
+target_include_directories(Why3RunnerRunTest PRIVATE
+  ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(Why3RunnerRunTest PRIVATE
+  ArcanumBackend
+  gtest_main
+  LLVMSupport
+)
+gtest_discover_tests(Why3RunnerRunTest)
+
 # --- Lit tests ---
 add_subdirectory(lit)

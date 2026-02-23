@@ -18,22 +18,50 @@ constexpr size_t DETAIL_GROUP_INDEX = 3;
 constexpr int MS_PER_SECOND = 1000;
 } // namespace
 
-std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
+/// Parse Why3 stdout into obligation results.
+///
+/// Format dependency: This parser relies on Why3's default textual output
+/// format.  Expected patterns:
+///   - "Theory <ModuleName>" lines to track function context
+///   - "Goal <name>. Valid (Xs, N steps)." for proven goals
+///   - "Goal <name>. Timeout." for timed-out goals
+///   - "Goal <name>. Unknown (\"reason\")." for unknown goals
+/// If Why3 changes its output format, this parser will silently produce
+/// empty results.  Consider using Why3's JSON output (--json) in future
+/// slices for robustness.
+std::vector<ObligationResult>
+parseWhy3Output(const std::string& output,
+                const std::map<std::string, std::string>& moduleToFuncMap) {
   std::vector<ObligationResult> results;
 
   // Match lines like: "    Goal <name>. Valid (0.01s, 0 steps)."
   // or: "    Goal <name>. Timeout."
   // or: "    Goal <name>. Unknown ("reason")."
-  std::regex goalRegex(
+  static const std::regex goalRegex(
       R"(Goal\s+(\S+)\.\s+(Valid|Timeout|Unknown)(?:\s+\(([^)]*)\))?)");
+
+  // Match lines like: "Theory SafeAdd" to track which module/function
+  // goals belong to.
+  static const std::regex theoryRegex(R"(Theory\s+(\S+))");
+
+  std::string currentFuncName;
 
   std::istringstream stream(output);
   std::string line;
   while (std::getline(stream, line)) {
+    // Track current theory/module context for function name attribution
+    std::smatch theoryMatch;
+    if (std::regex_search(line, theoryMatch, theoryRegex)) {
+      auto it = moduleToFuncMap.find(theoryMatch[1].str());
+      currentFuncName =
+          it != moduleToFuncMap.end() ? it->second : theoryMatch[1].str();
+    }
+
     std::smatch match;
     if (std::regex_search(line, match, goalRegex)) {
       ObligationResult result;
       result.name = match[1].str();
+      result.functionName = currentFuncName;
 
       auto statusStr = match[2].str();
       if (statusStr == "Valid") {
@@ -49,7 +77,7 @@ std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
       // Parse duration if present (e.g., "0.01s, 0 steps")
       if (match.size() > DETAIL_GROUP_INDEX &&
           match[DETAIL_GROUP_INDEX].matched) {
-        std::regex durationRegex(R"(([\d.]+)s)");
+        static const std::regex durationRegex(R"(([\d.]+)s)");
         std::smatch durMatch;
         auto detailStr = match[DETAIL_GROUP_INDEX].str();
         if (std::regex_search(detailStr, durMatch, durationRegex)) {
@@ -72,9 +100,10 @@ std::vector<ObligationResult> parseWhy3Output(const std::string& output) {
   return results;
 }
 
-std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
-                                      const std::string& why3Binary,
-                                      int timeoutSeconds) {
+std::vector<ObligationResult>
+runWhy3(const std::string& mlwPath,
+        const std::map<std::string, std::string>& moduleToFuncMap,
+        const std::string& why3Binary, int timeoutSeconds) {
   // Find the why3 binary
   auto why3 = llvm::sys::findProgramByName(why3Binary);
   if (!why3) {
@@ -114,7 +143,6 @@ std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
 
   int exitCode = llvm::sys::ExecuteAndWait(why3.get(), args,
                                            /*Env=*/std::nullopt, redirects);
-  (void)exitCode;
 
   // Read output file
   auto bufOrErr = llvm::MemoryBuffer::getFile(outputPath);
@@ -123,9 +151,23 @@ std::vector<ObligationResult> runWhy3(const std::string& mlwPath,
     output = (*bufOrErr)->getBuffer().str();
   }
   auto removeEc = llvm::sys::fs::remove(outputPath);
-  (void)removeEc;
+  if (removeEc) {
+    llvm::errs() << "warning: could not remove temp file: " << outputPath
+                 << "\n";
+  }
 
-  return parseWhy3Output(output);
+  // Check exit code: non-zero indicates Why3 crashed or had config errors.
+  // Parse whatever output was produced but return Failure if no goals
+  // were found and the exit code was non-zero.
+  auto results = parseWhy3Output(output, moduleToFuncMap);
+  if (exitCode != 0 && results.empty()) {
+    ObligationResult err;
+    err.name = "why3_error";
+    err.status = ObligationStatus::Failure;
+    return {err};
+  }
+
+  return results;
 }
 
 } // namespace arcanum

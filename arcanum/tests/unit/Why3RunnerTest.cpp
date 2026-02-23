@@ -58,5 +58,17 @@ TEST(Why3RunnerTest, ParsesEmptyOutput) {
   EXPECT_TRUE(results.empty());
 }
 
+// TC-14: Valid goal with no duration info -- duration should default to 0.
+TEST(Why3RunnerTest, ValidGoalNoDurationDefaultsToZero) {
+  std::string output = R"(
+Theory SafeAdd
+    Goal postcondition'vc. Valid.
+)";
+  auto results = parseWhy3Output(output);
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].status, ObligationStatus::Valid);
+  EXPECT_EQ(results[0].duration.count(), 0);
+}
+
 } // namespace
 } // namespace arcanum

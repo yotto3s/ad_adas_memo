@@ -1,3 +1,4 @@
+#include "arcanum/DiagnosticTracker.h"
 #include "arcanum/dialect/Lowering.h"
 #include "arcanum/dialect/ArcDialect.h"
 #include "arcanum/dialect/ArcOps.h"
@@ -12,7 +13,15 @@
 namespace arcanum {
 namespace {
 
-TEST(LoweringTest, LowersSimpleAddFunction) {
+/// Test fixture that resets DiagnosticTracker before each test to avoid
+/// cross-test contamination from fallback counts (CR-10).
+class LoweringTestFixture : public ::testing::Test {
+protected:
+  void SetUp() override { DiagnosticTracker::reset(); }
+  void TearDown() override { DiagnosticTracker::reset(); }
+};
+
+TEST_F(LoweringTestFixture, LowersSimpleAddFunction) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
@@ -42,7 +51,7 @@ TEST(LoweringTest, LowersSimpleAddFunction) {
   EXPECT_TRUE(foundFunc);
 }
 
-TEST(LoweringTest, LowersIfElseFunction) {
+TEST_F(LoweringTestFixture, LowersIfElseFunction) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
@@ -69,7 +78,7 @@ TEST(LoweringTest, LowersIfElseFunction) {
 }
 
 // TC-12: Verify contract attributes and body operations on lowered FuncOp
-TEST(LoweringTest, FuncOpHasContractAttributesAndBody) {
+TEST_F(LoweringTestFixture, FuncOpHasContractAttributesAndBody) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
@@ -109,7 +118,7 @@ TEST(LoweringTest, FuncOpHasContractAttributesAndBody) {
 }
 
 // TC-13: Lowering various expression types
-TEST(LoweringTest, LowersSubtraction) {
+TEST_F(LoweringTestFixture, LowersSubtraction) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
@@ -131,7 +140,7 @@ TEST(LoweringTest, LowersSubtraction) {
   EXPECT_TRUE(foundSub);
 }
 
-TEST(LoweringTest, LowersComparison) {
+TEST_F(LoweringTestFixture, LowersComparison) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
@@ -153,7 +162,7 @@ TEST(LoweringTest, LowersComparison) {
   EXPECT_TRUE(foundCmp);
 }
 
-TEST(LoweringTest, LowersVariableDeclaration) {
+TEST_F(LoweringTestFixture, LowersVariableDeclaration) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
@@ -179,7 +188,7 @@ TEST(LoweringTest, LowersVariableDeclaration) {
   EXPECT_TRUE(foundVar);
 }
 
-TEST(LoweringTest, LowersFunctionWithoutContracts) {
+TEST_F(LoweringTestFixture, LowersFunctionWithoutContracts) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
