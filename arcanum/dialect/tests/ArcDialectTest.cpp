@@ -402,5 +402,58 @@ TEST_F(ArcDialectTest, AddOpWithU16Type) {
   module->destroy();
 }
 
+// --- Task 2: CastOp tests ---
+
+TEST_F(ArcDialectTest, CastOpWideningI8ToI32) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto i8Type = arc::IntType::get(&context_, 8, true);
+  auto i32Type = arc::IntType::get(&context_, 32, true);
+  auto src = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i8Type, builder_->getI8IntegerAttr(42));
+  auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(),
+                                              i32Type, src.getResult());
+
+  EXPECT_TRUE(castOp);
+  EXPECT_EQ(castOp.getInput().getType(), i8Type);
+  EXPECT_EQ(castOp.getResult().getType(), i32Type);
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, CastOpNarrowingI32ToI8) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto i32Type = arc::IntType::get(&context_, 32, true);
+  auto i8Type = arc::IntType::get(&context_, 8, true);
+  auto src = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(100));
+  auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(), i8Type,
+                                              src.getResult());
+
+  EXPECT_TRUE(castOp);
+  EXPECT_EQ(castOp.getInput().getType(), i32Type);
+  EXPECT_EQ(castOp.getResult().getType(), i8Type);
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, CastOpSignChangeI32ToU32) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto i32Type = arc::IntType::get(&context_, 32, true);
+  auto u32Type = arc::IntType::get(&context_, 32, false);
+  auto src = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(5));
+  auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(),
+                                              u32Type, src.getResult());
+
+  EXPECT_TRUE(castOp);
+  EXPECT_EQ(castOp.getInput().getType(), i32Type);
+  EXPECT_EQ(castOp.getResult().getType(), u32Type);
+  module->destroy();
+}
+
 } // namespace
 } // namespace arcanum
