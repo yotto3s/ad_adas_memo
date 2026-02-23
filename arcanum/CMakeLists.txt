@@ -48,10 +48,6 @@ include(HandleLLVMOptions)
 set(ARCANUM_LLVM_INCLUDE_DIRS ${LLVM_INCLUDE_DIRS})
 set(ARCANUM_MLIR_INCLUDE_DIRS ${MLIR_INCLUDE_DIRS})
 
-# Project include directories (for TableGen outputs and dialect headers)
-include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(${PROJECT_BINARY_DIR}/include)
-
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
@@ -60,198 +56,29 @@ find_package(Clang REQUIRED CONFIG)
 message(STATUS "Using ClangConfig.cmake in: ${Clang_DIR}")
 set(ARCANUM_CLANG_INCLUDE_DIRS ${CLANG_INCLUDE_DIRS})
 
-# --- TableGen for Arc dialect ---
-# TableGen needs LLVM/MLIR include dirs in the INCLUDE_DIRECTORIES
-# directory property to resolve .td includes. We add them here temporarily
-# for TableGen, then remove them to avoid polluting GoogleTest with LLVM
-# headers (which cause cxxabi.h conflicts with GCC).
-set_property(DIRECTORY APPEND PROPERTY INCLUDE_DIRECTORIES
-  ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/arcanum/dialect)
+# --- Testing ---
+enable_testing()
+include(cmake/GoogleTest.cmake)
 
-# Generate dialect declarations/definitions from ArcOps.td
-set(LLVM_TARGET_DEFINITIONS include/arcanum/dialect/ArcOps.td)
-mlir_tablegen(include/arcanum/dialect/ArcOps.h.inc -gen-op-decls)
-mlir_tablegen(include/arcanum/dialect/ArcOps.cpp.inc -gen-op-defs)
-mlir_tablegen(include/arcanum/dialect/ArcDialect.h.inc -gen-dialect-decls)
-mlir_tablegen(include/arcanum/dialect/ArcDialect.cpp.inc -gen-dialect-defs)
-add_public_tablegen_target(ArcOpsIncGen)
-
-# Generate type declarations/definitions from ArcTypes.td
-set(LLVM_TARGET_DEFINITIONS include/arcanum/dialect/ArcTypes.td)
-mlir_tablegen(include/arcanum/dialect/ArcTypes.h.inc -gen-typedef-decls)
-mlir_tablegen(include/arcanum/dialect/ArcTypes.cpp.inc -gen-typedef-defs)
-add_public_tablegen_target(ArcTypesIncGen)
-
-# Remove LLVM/MLIR includes from directory property after TableGen is done.
-# This prevents them from polluting GoogleTest builds.
-get_property(_current_includes DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
-list(REMOVE_ITEM _current_includes ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})
-set_property(DIRECTORY PROPERTY INCLUDE_DIRECTORIES ${_current_includes})
-
-# --- Arc dialect library ---
-add_mlir_dialect_library(ArcDialect
-  lib/dialect/ArcDialect.cpp
-  lib/dialect/ArcOps.cpp
-  lib/dialect/ArcTypes.cpp
-
-  ADDITIONAL_HEADER_DIRS
-  ${PROJECT_SOURCE_DIR}/include/arcanum/dialect
-
-  DEPENDS
-  ArcOpsIncGen
-  ArcTypesIncGen
-
-  LINK_LIBS PUBLIC
-  MLIRIR
-  MLIRPass
-  MLIRSupport
-  MLIRFuncDialect
-)
-target_include_directories(ArcDialect SYSTEM PUBLIC
-  ${ARCANUM_LLVM_INCLUDE_DIRS}
-  ${ARCANUM_MLIR_INCLUDE_DIRS}
-)
-
-# --- Frontend library (SubsetEnforcer + ContractParser) ---
-add_library(ArcanumFrontend
-  lib/frontend/SubsetEnforcer.cpp
-  lib/frontend/ContractParser.cpp
-)
-target_include_directories(ArcanumFrontend SYSTEM PUBLIC
-  ${ARCANUM_LLVM_INCLUDE_DIRS}
-  ${ARCANUM_CLANG_INCLUDE_DIRS}
-)
-target_include_directories(ArcanumFrontend PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(ArcanumFrontend PUBLIC
-  clangAST
-  clangBasic
-  clangFrontend
-  clangTooling
-  clangASTMatchers
-)
-
-# --- Lowering library ---
-add_library(ArcanumLowering
-  lib/dialect/Lowering.cpp
-)
-target_include_directories(ArcanumLowering SYSTEM PUBLIC
-  ${ARCANUM_LLVM_INCLUDE_DIRS}
-  ${ARCANUM_MLIR_INCLUDE_DIRS}
-  ${ARCANUM_CLANG_INCLUDE_DIRS}
-)
-target_include_directories(ArcanumLowering PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(ArcanumLowering PUBLIC
-  ArcDialect
-  ArcanumFrontend
-  MLIRIR
-)
-
-# --- Passes library ---
-add_library(ArcanumPasses
-  lib/passes/Passes.cpp
-)
-target_include_directories(ArcanumPasses SYSTEM PUBLIC
-  ${ARCANUM_LLVM_INCLUDE_DIRS}
-  ${ARCANUM_MLIR_INCLUDE_DIRS}
-)
-target_include_directories(ArcanumPasses PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(ArcanumPasses PUBLIC
-  ArcDialect
-  MLIRPass
-  MLIRIR
-)
-
-# --- Backend library (WhyMLEmitter + Why3Runner) ---
-add_library(ArcanumBackend
-  lib/backend/WhyMLEmitter.cpp
-  lib/backend/Why3Runner.cpp
-)
-target_include_directories(ArcanumBackend SYSTEM PUBLIC
-  ${ARCANUM_LLVM_INCLUDE_DIRS}
-  ${ARCANUM_MLIR_INCLUDE_DIRS}
-)
-target_include_directories(ArcanumBackend PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(ArcanumBackend PUBLIC
-  ArcDialect
-  MLIRIR
-  LLVMSupport
-)
-
-# --- Report library ---
-add_library(ArcanumReport
-  lib/report/ReportGenerator.cpp
-)
-target_include_directories(ArcanumReport SYSTEM PUBLIC
-  ${ARCANUM_LLVM_INCLUDE_DIRS}
-  ${ARCANUM_MLIR_INCLUDE_DIRS}
-)
-target_include_directories(ArcanumReport PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(ArcanumReport PUBLIC
-  LLVMSupport
-)
-
-# --- CLI executable ---
-add_executable(arcanum tools/arcanum/main.cpp)
-target_include_directories(arcanum SYSTEM PRIVATE
-  ${ARCANUM_LLVM_INCLUDE_DIRS}
-  ${ARCANUM_MLIR_INCLUDE_DIRS}
-  ${ARCANUM_CLANG_INCLUDE_DIRS}
-)
-target_include_directories(arcanum PRIVATE
-  ${PROJECT_SOURCE_DIR}/include
-  ${PROJECT_BINARY_DIR}/include
-)
-target_link_libraries(arcanum PRIVATE
-  ArcanumFrontend
-  ArcanumLowering
-  ArcanumPasses
-  ArcanumBackend
-  ArcanumReport
-  ArcDialect
-  clangTooling
-  clangFrontend
-  clangSerialization
-  clangDriver
-  clangParse
-  clangSema
-  clangAnalysis
-  clangEdit
-  clangAST
-  clangLex
-  clangBasic
-  LLVMSupport
-  MLIRIR
-  MLIRPass
-)
+# --- Component subdirectories (order matters: dependency chain) ---
+add_subdirectory(frontend)
+add_subdirectory(dialect)
+add_subdirectory(backend)
+add_subdirectory(tools/arcanum)
+add_subdirectory(tests/lit)
 
 # --- Install & Export ---
-# Public headers
-install(DIRECTORY include/arcanum
+# Public headers (from each component)
+install(DIRECTORY
+  frontend/include/arcanum
+  dialect/include/arcanum
+  backend/include/arcanum
   DESTINATION include
   FILES_MATCHING PATTERN "*.h" PATTERN "*.td"
 )
 
 # Generated .inc files
-install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/arcanum/dialect
+install(DIRECTORY ${CMAKE_BINARY_DIR}/dialect/include/arcanum/dialect
   DESTINATION include/arcanum
   FILES_MATCHING PATTERN "*.inc"
 )
@@ -280,7 +107,3 @@ configure_package_config_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ArcanumConfig.cmake
   DESTINATION lib/cmake/Arcanum
 )
-
-# --- Testing ---
-enable_testing()
-add_subdirectory(tests)
