@@ -176,7 +176,7 @@ public:
 
 private:
   /// Check whether a statement (or any nested statement) contains a return.
-  bool containsReturn(const clang::Stmt* stmt) {
+  [[nodiscard]] bool containsReturn(const clang::Stmt* stmt) {
     if (stmt == nullptr) {
       return false;
     }
@@ -192,7 +192,7 @@ private:
   /// function to exit before reaching the end of a compound statement.
   /// Returns inside terminal if/else branches (where both branches return)
   /// are fine because they represent structured single-exit.
-  bool hasEarlyReturn(const clang::Stmt* stmt) {
+  [[nodiscard]] bool hasEarlyReturn(const clang::Stmt* stmt) {
     if (stmt == nullptr) {
       return false;
     }
@@ -228,7 +228,8 @@ private:
     return false;
   }
 
-  bool callsSelf(const clang::FunctionDecl* funcDecl, const clang::Stmt* stmt) {
+  [[nodiscard]] bool callsSelf(const clang::FunctionDecl* funcDecl,
+                               const clang::Stmt* stmt) {
     if (stmt == nullptr) {
       return false;
     }

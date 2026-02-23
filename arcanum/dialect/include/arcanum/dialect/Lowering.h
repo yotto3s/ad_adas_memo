@@ -19,7 +19,7 @@ namespace arcanum {
 /// caller must check DiagnosticTracker::getFallbackCount() after this
 /// call to detect incomplete lowering.  Returns nullptr only on fatal
 /// infrastructure errors.
-mlir::OwningOpRef<mlir::ModuleOp>
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 lowerToArc(mlir::MLIRContext& context, clang::ASTContext& astContext,
            const std::map<const clang::FunctionDecl*, ContractInfo>& contracts);
 

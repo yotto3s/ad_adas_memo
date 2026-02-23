@@ -77,21 +77,21 @@ class ExprParser {
 public:
   explicit ExprParser(llvm::StringRef text) : text(text) {}
 
-  ContractExprPtr parse() {
+  [[nodiscard]] ContractExprPtr parse() {
     auto expr = parseOr();
     skipWhitespace();
     return expr;
   }
 
 private:
-  void skipWhitespace() {
+  void skipWhitespace() noexcept {
     while (pos < text.size() &&
            (std::isspace(static_cast<unsigned char>(text[pos])) != 0)) {
       ++pos;
     }
   }
 
-  bool matchString(llvm::StringRef s) {
+  [[nodiscard]] bool matchString(llvm::StringRef s) noexcept {
     skipWhitespace();
     if (text.substr(pos).starts_with(s)) {
       pos += s.size();
@@ -100,7 +100,7 @@ private:
     return false;
   }
 
-  ContractExprPtr parseOr() {
+  [[nodiscard]] ContractExprPtr parseOr() {
     auto lhs = parseAnd();
     if (!lhs) {
       return nullptr;
@@ -115,7 +115,7 @@ private:
     return lhs;
   }
 
-  ContractExprPtr parseAnd() {
+  [[nodiscard]] ContractExprPtr parseAnd() {
     auto lhs = parseComparison();
     if (!lhs) {
       return nullptr;
@@ -130,7 +130,7 @@ private:
     return lhs;
   }
 
-  ContractExprPtr parseComparison() {
+  [[nodiscard]] ContractExprPtr parseComparison() {
     auto lhs = parseAddSub();
     if (!lhs) {
       return nullptr;
@@ -163,7 +163,7 @@ private:
     return lhs;
   }
 
-  ContractExprPtr parseAddSub() {
+  [[nodiscard]] ContractExprPtr parseAddSub() {
     auto lhs = parseMulDiv();
     if (!lhs) {
       return nullptr;
@@ -189,7 +189,7 @@ private:
     return lhs;
   }
 
-  ContractExprPtr parseMulDiv() {
+  [[nodiscard]] ContractExprPtr parseMulDiv() {
     auto lhs = parseUnary();
     if (!lhs) {
       return nullptr;
@@ -221,7 +221,7 @@ private:
     return lhs;
   }
 
-  ContractExprPtr parseUnary() {
+  [[nodiscard]] ContractExprPtr parseUnary() {
     skipWhitespace();
     if (matchString("!")) {
       auto operand = parseUnary();
@@ -240,7 +240,7 @@ private:
     return parsePrimary();
   }
 
-  ContractExprPtr parsePrimary() {
+  [[nodiscard]] ContractExprPtr parsePrimary() {
     skipWhitespace();
     if (pos >= text.size()) {
       return nullptr; // Error: unexpected end of expression
@@ -319,7 +319,8 @@ private:
 };
 
 /// Extract //@ lines from a raw comment block and return them.
-std::vector<std::string> extractAnnotationLines(llvm::StringRef commentText) {
+[[nodiscard]] std::vector<std::string>
+extractAnnotationLines(llvm::StringRef commentText) {
   std::vector<std::string> lines;
   llvm::SmallVector<llvm::StringRef, 8> // NOLINT(readability-magic-numbers)
       splitLines;

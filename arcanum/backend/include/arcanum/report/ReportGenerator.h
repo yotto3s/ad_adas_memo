@@ -19,8 +19,9 @@ struct Report {
 };
 
 /// Generate a human-readable verification report.
-Report generateReport(const std::vector<ObligationResult>& obligations,
-                      const std::map<std::string, LocationEntry>& locationMap);
+[[nodiscard]] Report
+generateReport(const std::vector<ObligationResult>& obligations,
+               const std::map<std::string, LocationEntry>& locationMap);
 
 } // namespace arcanum
 

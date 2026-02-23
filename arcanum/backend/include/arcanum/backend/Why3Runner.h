@@ -33,7 +33,7 @@ struct ObligationResult {
 /// Returns per-obligation results parsed from Why3 stdout.
 /// The moduleToFuncMap maps WhyML module names to original C++ function names,
 /// used to attribute proof obligations to source functions.
-std::vector<ObligationResult>
+[[nodiscard]] std::vector<ObligationResult>
 runWhy3(const std::string& mlwPath,
         const std::map<std::string, std::string>& moduleToFuncMap = {},
         const std::string& why3Binary = "why3",
@@ -41,7 +41,7 @@ runWhy3(const std::string& mlwPath,
 
 /// Parse Why3 stdout output into obligation results (exposed for testing).
 /// The moduleToFuncMap maps WhyML module names to original C++ function names.
-std::vector<ObligationResult>
+[[nodiscard]] std::vector<ObligationResult>
 parseWhy3Output(const std::string& output,
                 const std::map<std::string, std::string>& moduleToFuncMap = {});
 

@@ -16,7 +16,7 @@ struct SubsetResult {
 /// Allowed: int32_t, bool, non-template non-recursive functions with single
 /// return, variable declarations, assignments, if/else, return,
 /// +, -, *, /, %, comparisons, &&, ||, !.
-SubsetResult enforceSubset(clang::ASTContext& context);
+[[nodiscard]] SubsetResult enforceSubset(clang::ASTContext& context);
 
 } // namespace arcanum
 

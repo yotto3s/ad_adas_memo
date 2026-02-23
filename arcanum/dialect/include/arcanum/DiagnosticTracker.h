@@ -12,11 +12,13 @@ namespace arcanum {
 struct DiagnosticTracker {
   static inline std::atomic<int> fallbackCount{0};
 
-  static void reset() { fallbackCount.store(0, std::memory_order_relaxed); }
-  static void recordFallback() {
+  static void reset() noexcept {
+    fallbackCount.store(0, std::memory_order_relaxed);
+  }
+  static void recordFallback() noexcept {
     fallbackCount.fetch_add(1, std::memory_order_relaxed);
   }
-  static int getFallbackCount() {
+  [[nodiscard]] static int getFallbackCount() noexcept {
     return fallbackCount.load(std::memory_order_relaxed);
   }
 };

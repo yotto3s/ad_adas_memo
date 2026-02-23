@@ -75,13 +75,14 @@ struct ContractExpr {
   UnaryOpKind unaryOp = UnaryOpKind::Not;
   ContractExprPtr operand;
 
-  static ContractExprPtr makeIntLiteral(int64_t val);
-  static ContractExprPtr makeBoolLiteral(bool val);
-  static ContractExprPtr makeParamRef(const std::string& name);
-  static ContractExprPtr makeResultRef();
-  static ContractExprPtr makeBinaryOp(BinaryOpKind op, ContractExprPtr lhs,
-                                      ContractExprPtr rhs);
-  static ContractExprPtr makeUnaryOp(UnaryOpKind op, ContractExprPtr operand);
+  [[nodiscard]] static ContractExprPtr makeIntLiteral(int64_t val);
+  [[nodiscard]] static ContractExprPtr makeBoolLiteral(bool val);
+  [[nodiscard]] static ContractExprPtr makeParamRef(const std::string& name);
+  [[nodiscard]] static ContractExprPtr makeResultRef();
+  [[nodiscard]] static ContractExprPtr
+  makeBinaryOp(BinaryOpKind op, ContractExprPtr lhs, ContractExprPtr rhs);
+  [[nodiscard]] static ContractExprPtr makeUnaryOp(UnaryOpKind op,
+                                                   ContractExprPtr operand);
 };
 
 struct ContractInfo {
@@ -95,7 +96,7 @@ struct ContractInfo {
 /// Error contract: Never fails at the map level.  Malformed contract
 /// expressions are silently dropped with a warning to llvm::errs().
 /// The caller receives only successfully parsed contracts.
-std::map<const clang::FunctionDecl*, ContractInfo>
+[[nodiscard]] std::map<const clang::FunctionDecl*, ContractInfo>
 parseContracts(clang::ASTContext& context);
 
 } // namespace arcanum

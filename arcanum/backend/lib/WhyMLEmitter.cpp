@@ -29,7 +29,7 @@ constexpr llvm::StringLiteral INT32_MAX_STR("2147483647");
 /// Unary negation is serialized as "-<operand>" by serializeExpr(); we
 /// handle it here but note that WhyML uses prefix "-" natively, so no
 /// translation is needed for the "-" character itself.
-std::string contractToWhyML(llvm::StringRef contract) {
+[[nodiscard]] std::string contractToWhyML(llvm::StringRef contract) {
   std::string result;
   size_t i = 0;
   while (i < contract.size()) {
@@ -82,7 +82,7 @@ std::string contractToWhyML(llvm::StringRef contract) {
 
 /// Convert a CamelCase or snake_case function name to a WhyML module name
 /// (first letter capitalized).
-std::string toModuleName(llvm::StringRef funcName) {
+[[nodiscard]] std::string toModuleName(llvm::StringRef funcName) {
   std::string result = funcName.str();
   if (!result.empty()) {
     // Convert snake_case to CamelCase for module name
@@ -106,7 +106,7 @@ std::string toModuleName(llvm::StringRef funcName) {
 /// Extract the param_names attribute from a FuncOp into a vector of strings.
 /// Falls back to "argN" naming if the attribute is missing or has fewer
 /// entries than the function has arguments.
-llvm::SmallVector<std::string> getParamNames(arc::FuncOp funcOp) {
+[[nodiscard]] llvm::SmallVector<std::string> getParamNames(arc::FuncOp funcOp) {
   llvm::SmallVector<std::string> names;
   if (auto paramNamesAttr =
           funcOp->getAttrOfType<mlir::ArrayAttr>("param_names")) {
@@ -121,7 +121,7 @@ class WhyMLWriter {
 public:
   explicit WhyMLWriter(mlir::ModuleOp module) : module(module) {}
 
-  std::optional<WhyMLResult> emit() {
+  [[nodiscard]] std::optional<WhyMLResult> emit() {
     WhyMLResult result;
 
     // The walk callback captures `result` by reference.  This is safe
@@ -156,7 +156,7 @@ public:
   }
 
 private:
-  std::string toWhyMLType(mlir::Type t) {
+  [[nodiscard]] std::string toWhyMLType(mlir::Type t) {
     if (mlir::isa<arc::BoolType>(t)) {
       return "bool";
     }
@@ -422,8 +422,8 @@ private:
   // Slice 1 output.  If it does, it indicates a bug in the lowering or
   // emission pipeline (an MLIR value was created but not registered in
   // nameMap).  Not tested directly; covered implicitly by integration tests.
-  std::string getExpr(mlir::Value val,
-                      llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+  [[nodiscard]] std::string
+  getExpr(mlir::Value val, llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto it = nameMap.find(val);
     if (it != nameMap.end()) {
       return it->second;

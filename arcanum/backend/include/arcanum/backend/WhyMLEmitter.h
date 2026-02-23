@@ -31,7 +31,7 @@ struct WhyMLResult {
 /// Error contract: Returns std::nullopt on failure (empty module, I/O
 /// error).  Unmapped MLIR values emit "?unknown?" with a warning,
 /// producing invalid WhyML that Why3 will reject at parse time.
-std::optional<WhyMLResult> emitWhyML(mlir::ModuleOp module);
+[[nodiscard]] std::optional<WhyMLResult> emitWhyML(mlir::ModuleOp module);
 
 } // namespace arcanum
 
