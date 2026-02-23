@@ -409,6 +409,22 @@ TEST(SubsetEnforcerTest, RejectsCStyleCast) {
   EXPECT_TRUE(foundCast) << "Should suggest using static_cast";
 }
 
+// [S2] Implicit integer conversions should not trigger C-style cast rejection
+TEST(SubsetEnforcerTest, ImplicitConversionDoesNotTriggerCastRejection) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t foo(int32_t x) {
+      int32_t y = 42;
+      return y;
+    }
+  )");
+  EXPECT_TRUE(result.passed);
+  for (const auto& diag : result.diagnostics) {
+    EXPECT_EQ(diag.find("C-style cast"), std::string::npos)
+        << "Implicit conversions should not be flagged as C-style casts";
+  }
+}
+
 // [S2] Reject reinterpret_cast
 TEST(SubsetEnforcerTest, RejectsReinterpretCast) {
   auto result = checkSubset(R"(

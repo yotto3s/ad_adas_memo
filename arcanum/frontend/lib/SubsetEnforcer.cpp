@@ -193,10 +193,14 @@ public:
   }
 
   bool VisitCStyleCastExpr(clang::CStyleCastExpr* expr) {
-    // Skip implicit C-style casts inserted by the compiler (e.g., in system
-    // headers or for integer literal conversions).
+    // Skip casts in system headers
     if (expr->getBeginLoc().isValid() &&
         ctx.getSourceManager().isInSystemHeader(expr->getBeginLoc())) {
+      return true;
+    }
+    // Skip casts that originate from macro expansions (e.g., system macros
+    // like INT32_C() that expand to C-style casts in user code)
+    if (expr->getLParenLoc().isMacroID()) {
       return true;
     }
     addDiagnostic(expr->getBeginLoc(),
