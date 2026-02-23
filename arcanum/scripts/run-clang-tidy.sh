@@ -35,10 +35,12 @@ trap 'rm -rf "${FILTERED_DIR}"' EXIT
 
 sed -e 's/-fno-canonical-system-headers//g' \
     -e 's/-fstack-usage//g' \
+    -e 's/-Wno-class-memaccess//g' \
     "${BUILD_DIR}/compile_commands.json" > "${FILTERED_DIR}/compile_commands.json"
 
-# Find .cpp files in lib/ and tools/ and run clang-tidy in parallel
-find "${ARCANUM_DIR}/lib" "${ARCANUM_DIR}/tools" -name '*.cpp' -print0 \
+# Find .cpp files in component lib/ dirs and tools/ (exclude tests), run clang-tidy in parallel
+find "${ARCANUM_DIR}/frontend" "${ARCANUM_DIR}/dialect" "${ARCANUM_DIR}/backend" "${ARCANUM_DIR}/tools" \
+  -name '*.cpp' ! -path '*/tests/*' -print0 \
   | xargs -0 -P"$(nproc)" -I{} \
     clang-tidy \
       -p "${FILTERED_DIR}" \
