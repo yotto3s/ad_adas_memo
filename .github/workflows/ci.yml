@@ -34,6 +34,11 @@ jobs:
           cd arcanum
           cmake --preset clang-debug
 
+      - name: Generate TableGen headers
+        run: |
+          cd arcanum
+          cmake --build build/clang-debug --target ArcOpsIncGen ArcTypesIncGen
+
       - name: clang-tidy
         run: ./arcanum/scripts/run-clang-tidy.sh build/clang-debug
 
