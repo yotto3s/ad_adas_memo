@@ -455,5 +455,86 @@ TEST_F(ArcDialectTest, CastOpSignChangeI32ToU32) {
   module->destroy();
 }
 
+// --- Task 3: Overflow mode string attribute tests ---
+
+TEST_F(ArcDialectTest, AddOpWithOverflowWrapAttribute) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto i32Type = arc::IntType::get(&context_, 32, true);
+  auto lhs = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(1));
+  auto rhs = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(2));
+  auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), i32Type,
+                                            lhs, rhs);
+
+  // MLIR supports arbitrary attributes natively; attach overflow mode.
+  addOp->setAttr("overflow", builder_->getStringAttr("wrap"));
+  auto attr = addOp->getAttrOfType<mlir::StringAttr>("overflow");
+  ASSERT_TRUE(attr);
+  EXPECT_EQ(attr.getValue(), "wrap");
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, AddOpWithOverflowSaturateAttribute) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto i32Type = arc::IntType::get(&context_, 32, true);
+  auto lhs = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(1));
+  auto rhs = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(2));
+  auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), i32Type,
+                                            lhs, rhs);
+
+  addOp->setAttr("overflow", builder_->getStringAttr("saturate"));
+  auto attr = addOp->getAttrOfType<mlir::StringAttr>("overflow");
+  ASSERT_TRUE(attr);
+  EXPECT_EQ(attr.getValue(), "saturate");
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, FuncOpWithOverflowTrapAttribute) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto i32Type = arc::IntType::get(&context_, 32, true);
+  auto funcType = mlir::FunctionType::get(&context_, {i32Type}, {i32Type});
+  auto funcOp = builder_->create<arc::FuncOp>(
+      builder_->getUnknownLoc(), "my_func", funcType,
+      /*requires_attr=*/mlir::StringAttr{},
+      /*ensures_attr=*/mlir::StringAttr{});
+
+  funcOp->setAttr("overflow", builder_->getStringAttr("trap"));
+  auto attr = funcOp->getAttrOfType<mlir::StringAttr>("overflow");
+  ASSERT_TRUE(attr);
+  EXPECT_EQ(attr.getValue(), "trap");
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, MulOpAbsentOverflowAttributeIsNull) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto i32Type = arc::IntType::get(&context_, 32, true);
+  auto lhs = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(3));
+  auto rhs = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(4));
+  auto mulOp = builder_->create<arc::MulOp>(builder_->getUnknownLoc(), i32Type,
+                                            lhs, rhs);
+
+  // No overflow attribute set; lookup should return null.
+  auto attr = mulOp->getAttrOfType<mlir::StringAttr>("overflow");
+  EXPECT_FALSE(attr);
+
+  module->destroy();
+}
+
 } // namespace
 } // namespace arcanum
