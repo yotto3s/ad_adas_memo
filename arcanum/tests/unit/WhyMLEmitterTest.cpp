@@ -464,7 +464,8 @@ TEST(WhyMLEmitterTest, CamelCaseFuncModuleName) {
   auto result = emitWhyML(*module);
   ASSERT_TRUE(result.has_value());
 
-  // "myFunc" has no underscores; toModuleName capitalizes first letter -> "MyFunc"
+  // "myFunc" has no underscores; toModuleName capitalizes first letter ->
+  // "MyFunc"
   EXPECT_NE(result->whymlText.find("module MyFunc"), std::string::npos)
       << "Expected 'module MyFunc' in WhyML output.  Text:\n"
       << result->whymlText;

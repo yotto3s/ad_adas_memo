@@ -1,6 +1,4 @@
-/// Bug reproduction tests for WhyMLEmitter.cpp findings.
-/// These tests demonstrate bugs found by the bug hunter agent.
-/// Each test targets exactly one finding and should FAIL before the bug is fixed.
+/// Regression tests for WhyMLEmitter.cpp bug fixes.
 
 #include "arcanum/backend/WhyMLEmitter.h"
 #include "arcanum/dialect/ArcDialect.h"
@@ -26,7 +24,7 @@ namespace {
 ///
 /// This test verifies that when a function uses division, the emitted
 /// WhyML text contains "use int.ComputerDivision" (or equivalent).
-TEST(BugHunterWhyMLEmitterTest, F2_DivisionRequiresComputerDivisionImport) {
+TEST(WhyMLEmitterRegressionTest, DivisionEmitsComputerDivisionImport) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
@@ -57,7 +55,7 @@ TEST(BugHunterWhyMLEmitterTest, F2_DivisionRequiresComputerDivisionImport) {
 }
 
 /// [F2] Same bug for modulo: missing ComputerDivision import.
-TEST(BugHunterWhyMLEmitterTest, F2_ModuloRequiresComputerDivisionImport) {
+TEST(WhyMLEmitterRegressionTest, ModuloEmitsComputerDivisionImport) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
@@ -90,7 +88,7 @@ TEST(BugHunterWhyMLEmitterTest, F2_ModuloRequiresComputerDivisionImport) {
 /// check.  INT32_MIN / -1 overflows in C (undefined behavior).  The
 /// WhyML output should contain an overflow assertion for division results,
 /// similar to what emitArithWithOverflowCheck does for add/sub/mul.
-TEST(BugHunterWhyMLEmitterTest, F4_DivisionOverflowNotChecked) {
+TEST(WhyMLEmitterRegressionTest, DivisionEmitsOverflowAssertion) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>
@@ -139,7 +137,7 @@ TEST(BugHunterWhyMLEmitterTest, F4_DivisionOverflowNotChecked) {
 /// but the body is non-trivial.  Since assignment lowering is unimplemented,
 /// we use a variable declaration inside the if to produce a non-empty then
 /// region.
-TEST(BugHunterWhyMLEmitterTest, F5_IfWithoutElseInvalidWhyML) {
+TEST(WhyMLEmitterRegressionTest, IfWithoutElseEmitsElseClause) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     #include <cstdint>

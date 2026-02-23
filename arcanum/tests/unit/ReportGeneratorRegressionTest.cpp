@@ -1,6 +1,4 @@
-/// Bug reproduction tests for ReportGenerator.cpp findings.
-/// These tests demonstrate bugs found by the bug hunter agent.
-/// Each test targets exactly one finding and should FAIL before the bug is fixed.
+/// Regression tests for ReportGenerator.cpp bug fixes.
 
 #include "arcanum/report/ReportGenerator.h"
 
@@ -20,7 +18,7 @@ namespace {
 /// Expected: The report should show separate results for each function.
 /// Before fix: Only "alpha_func" appears; "beta_func" obligations are
 /// counted but not attributed.
-TEST(BugHunterReportGeneratorTest, F6_MultipleFunctionsOnlyShowsFirst) {
+TEST(ReportGeneratorRegressionTest, MultipleFunctionsReportedSeparately) {
   std::vector<ObligationResult> obligations;
   // Two obligations from alpha_func
   obligations.push_back({"alpha_overflow'vc", ObligationStatus::Valid,

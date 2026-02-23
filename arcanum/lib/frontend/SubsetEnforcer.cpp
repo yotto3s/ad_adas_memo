@@ -123,8 +123,7 @@ public:
   }
 
   bool VisitForStmt(clang::ForStmt* stmt) {
-    addDiagnostic(stmt->getBeginLoc(),
-                  "for loops are not allowed in Slice 1");
+    addDiagnostic(stmt->getBeginLoc(), "for loops are not allowed in Slice 1");
     return true;
   }
 

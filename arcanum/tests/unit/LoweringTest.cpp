@@ -1,5 +1,5 @@
-#include "arcanum/DiagnosticTracker.h"
 #include "arcanum/dialect/Lowering.h"
+#include "arcanum/DiagnosticTracker.h"
 #include "arcanum/dialect/ArcDialect.h"
 #include "arcanum/dialect/ArcOps.h"
 #include "arcanum/frontend/ContractParser.h"

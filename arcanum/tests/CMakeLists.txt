@@ -147,18 +147,18 @@ target_link_libraries(ReportGeneratorTest PRIVATE
 )
 gtest_discover_tests(ReportGeneratorTest)
 
-# --- BugHunterLoweringTest ---
-add_executable(BugHunterLoweringTest unit/BugHunterLoweringTest.cpp)
-target_include_directories(BugHunterLoweringTest SYSTEM PRIVATE
+# --- LoweringRegressionTest ---
+add_executable(LoweringRegressionTest unit/LoweringRegressionTest.cpp)
+target_include_directories(LoweringRegressionTest SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
-target_include_directories(BugHunterLoweringTest PRIVATE
+target_include_directories(LoweringRegressionTest PRIVATE
   ${PROJECT_SOURCE_DIR}/include
   ${PROJECT_BINARY_DIR}/include
 )
-target_link_libraries(BugHunterLoweringTest PRIVATE
+target_link_libraries(LoweringRegressionTest PRIVATE
   ArcanumLowering
   ArcanumFrontend
   ArcDialect
@@ -166,20 +166,20 @@ target_link_libraries(BugHunterLoweringTest PRIVATE
   clangTooling
   MLIRIR
 )
-gtest_discover_tests(BugHunterLoweringTest)
+gtest_discover_tests(LoweringRegressionTest)
 
-# --- BugHunterWhyMLEmitterTest ---
-add_executable(BugHunterWhyMLEmitterTest unit/BugHunterWhyMLEmitterTest.cpp)
-target_include_directories(BugHunterWhyMLEmitterTest SYSTEM PRIVATE
+# --- WhyMLEmitterRegressionTest ---
+add_executable(WhyMLEmitterRegressionTest unit/WhyMLEmitterRegressionTest.cpp)
+target_include_directories(WhyMLEmitterRegressionTest SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
-target_include_directories(BugHunterWhyMLEmitterTest PRIVATE
+target_include_directories(WhyMLEmitterRegressionTest PRIVATE
   ${PROJECT_SOURCE_DIR}/include
   ${PROJECT_BINARY_DIR}/include
 )
-target_link_libraries(BugHunterWhyMLEmitterTest PRIVATE
+target_link_libraries(WhyMLEmitterRegressionTest PRIVATE
   ArcanumBackend
   ArcanumLowering
   ArcanumFrontend
@@ -189,35 +189,35 @@ target_link_libraries(BugHunterWhyMLEmitterTest PRIVATE
   MLIRIR
   LLVMSupport
 )
-gtest_discover_tests(BugHunterWhyMLEmitterTest)
+gtest_discover_tests(WhyMLEmitterRegressionTest)
 
-# --- BugHunterContractParserTest ---
-add_executable(BugHunterContractParserTest unit/BugHunterContractParserTest.cpp)
-target_include_directories(BugHunterContractParserTest SYSTEM PRIVATE
+# --- ContractParserRegressionTest ---
+add_executable(ContractParserRegressionTest unit/ContractParserRegressionTest.cpp)
+target_include_directories(ContractParserRegressionTest SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_CLANG_INCLUDE_DIRS}
 )
-target_include_directories(BugHunterContractParserTest PRIVATE
+target_include_directories(ContractParserRegressionTest PRIVATE
   ${PROJECT_SOURCE_DIR}/include
 )
-target_link_libraries(BugHunterContractParserTest PRIVATE
+target_link_libraries(ContractParserRegressionTest PRIVATE
   ArcanumFrontend
   gtest_main
   clangTooling
 )
-gtest_discover_tests(BugHunterContractParserTest)
+gtest_discover_tests(ContractParserRegressionTest)
 
-# --- BugHunterReportGeneratorTest ---
-add_executable(BugHunterReportGeneratorTest unit/BugHunterReportGeneratorTest.cpp)
-target_include_directories(BugHunterReportGeneratorTest SYSTEM PRIVATE
+# --- ReportGeneratorRegressionTest ---
+add_executable(ReportGeneratorRegressionTest unit/ReportGeneratorRegressionTest.cpp)
+target_include_directories(ReportGeneratorRegressionTest SYSTEM PRIVATE
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
-target_include_directories(BugHunterReportGeneratorTest PRIVATE
+target_include_directories(ReportGeneratorRegressionTest PRIVATE
   ${PROJECT_SOURCE_DIR}/include
   ${PROJECT_BINARY_DIR}/include
 )
-target_link_libraries(BugHunterReportGeneratorTest PRIVATE
+target_link_libraries(ReportGeneratorRegressionTest PRIVATE
   ArcanumReport
   ArcanumBackend
   ArcDialect
@@ -225,7 +225,7 @@ target_link_libraries(BugHunterReportGeneratorTest PRIVATE
   MLIRIR
   LLVMSupport
 )
-gtest_discover_tests(BugHunterReportGeneratorTest)
+gtest_discover_tests(ReportGeneratorRegressionTest)
 
 # --- PassesTest ---
 add_executable(PassesTest unit/PassesTest.cpp)

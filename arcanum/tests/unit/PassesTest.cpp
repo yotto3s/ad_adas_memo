@@ -30,8 +30,7 @@ TEST(PassesTest, SucceedsOnValidModule) {
 
   auto savedIp = builder.saveInsertionPoint();
   builder.setInsertionPointToEnd(&block);
-  builder.create<arc::ReturnOp>(builder.getUnknownLoc(),
-                                block.getArgument(0));
+  builder.create<arc::ReturnOp>(builder.getUnknownLoc(), block.getArgument(0));
   builder.restoreInsertionPoint(savedIp);
 
   auto result = runPasses(module);

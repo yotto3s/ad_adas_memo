@@ -132,9 +132,8 @@ int main(int argc, const char** argv) {
   }
 
   // Stage 7: Why3 Runner
-  auto obligations = arcanum::runWhy3(whymlResult->filePath,
-                                      whymlResult->moduleToFuncMap, why3Path,
-                                      timeout);
+  auto obligations = arcanum::runWhy3(
+      whymlResult->filePath, whymlResult->moduleToFuncMap, why3Path, timeout);
 
   // Clean up the temporary .mlw file created by the WhyML emitter.
   auto removeEc = llvm::sys::fs::remove(whymlResult->filePath);
@@ -148,6 +147,7 @@ int main(int argc, const char** argv) {
   llvm::outs() << report.text;
   llvm::outs() << "\n";
 
-  return report.allPassed ? static_cast<int>(arcanum::ExitCode::Success)
-                          : static_cast<int>(arcanum::ExitCode::VerificationFailed);
+  return report.allPassed
+             ? static_cast<int>(arcanum::ExitCode::Success)
+             : static_cast<int>(arcanum::ExitCode::VerificationFailed);
 }

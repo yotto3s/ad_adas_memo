@@ -1,6 +1,4 @@
-/// Bug reproduction tests for ContractParser.cpp findings.
-/// These tests demonstrate bugs found by the bug hunter agent.
-/// Each test targets exactly one finding and should FAIL before the bug is fixed.
+/// Regression tests for ContractParser.cpp bug fixes.
 
 #include "arcanum/frontend/ContractParser.h"
 
@@ -34,7 +32,7 @@ parseFromSource(const std::string& code,
 /// Before fix: "trueVal" is parsed as BoolLiteral(true) + garbage "Val",
 /// resulting in a null/incorrect parse and the contract being silently
 /// dropped.
-TEST(BugHunterContractParserTest, F3_TruePrefixMatchesIdentifier) {
+TEST(ContractParserRegressionTest, TruePrefixParsesAsIdentifier) {
   std::unique_ptr<clang::ASTUnit> ast;
   auto contracts = parseFromSource(R"(
     #include <cstdint>
@@ -59,15 +57,14 @@ TEST(BugHunterContractParserTest, F3_TruePrefixMatchesIdentifier) {
   // The LHS should be a ParamRef to "trueVal", NOT a BoolLiteral
   ASSERT_NE(expr->left, nullptr);
   EXPECT_EQ(expr->left->kind, ContractExprKind::ParamRef)
-      << "LHS was parsed as kind="
-      << static_cast<int>(expr->left->kind)
+      << "LHS was parsed as kind=" << static_cast<int>(expr->left->kind)
       << " instead of ParamRef.  'true' prefix was likely matched as a "
          "boolean literal.";
   EXPECT_EQ(expr->left->paramName, "trueVal");
 }
 
 /// [F3] Same bug with "false" prefix.
-TEST(BugHunterContractParserTest, F3_FalsePrefixMatchesIdentifier) {
+TEST(ContractParserRegressionTest, FalsePrefixParsesAsIdentifier) {
   std::unique_ptr<clang::ASTUnit> ast;
   auto contracts = parseFromSource(R"(
     #include <cstdint>
@@ -89,8 +86,7 @@ TEST(BugHunterContractParserTest, F3_FalsePrefixMatchesIdentifier) {
 
   ASSERT_NE(expr->left, nullptr);
   EXPECT_EQ(expr->left->kind, ContractExprKind::ParamRef)
-      << "LHS was parsed as kind="
-      << static_cast<int>(expr->left->kind)
+      << "LHS was parsed as kind=" << static_cast<int>(expr->left->kind)
       << " instead of ParamRef.  'false' prefix was likely matched as a "
          "boolean literal.";
   EXPECT_EQ(expr->left->paramName, "falsehood");

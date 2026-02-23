@@ -1,11 +1,9 @@
-/// Bug reproduction tests for Lowering.cpp findings.
-/// These tests demonstrate bugs found by the bug hunter agent.
-/// Each test targets exactly one finding and should FAIL before the bug is fixed.
+/// Regression tests for Lowering.cpp bug fixes.
 
 #include "arcanum/DiagnosticTracker.h"
-#include "arcanum/dialect/Lowering.h"
 #include "arcanum/dialect/ArcDialect.h"
 #include "arcanum/dialect/ArcOps.h"
+#include "arcanum/dialect/Lowering.h"
 #include "arcanum/frontend/ContractParser.h"
 
 #include "mlir/IR/BuiltinOps.h"
@@ -19,7 +17,7 @@ namespace {
 
 /// Test fixture that resets DiagnosticTracker before each test to avoid
 /// cross-test contamination from fallback counts (CR-10).
-class BugHunterLoweringTestFixture : public ::testing::Test {
+class LoweringRegressionTest : public ::testing::Test {
 protected:
   void SetUp() override { DiagnosticTracker::reset(); }
   void TearDown() override { DiagnosticTracker::reset(); }
@@ -35,7 +33,7 @@ protected:
 ///
 /// This test should crash (SEGFAULT / abort) without the fix.  With the
 /// fix, it should produce a valid module (no crash).
-TEST_F(BugHunterLoweringTestFixture, F1_VoidReturnCausesNullDeref) {
+TEST_F(LoweringRegressionTest, VoidReturnDoesNotCrash) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
     void doNothing() { return; }

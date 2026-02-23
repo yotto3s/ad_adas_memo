@@ -36,7 +36,8 @@ Report generateReport(const std::vector<ObligationResult>& obligations,
   if (hasPerObFuncNames && locationMap.size() > 1) {
     // Group by per-obligation function name
     for (const auto& ob : obligations) {
-      std::string funcName = ob.functionName.empty() ? "unknown" : ob.functionName;
+      std::string funcName =
+          ob.functionName.empty() ? "unknown" : ob.functionName;
       auto& stats = funcStatsMap[funcName];
       stats.totalCount++;
       stats.totalDuration += ob.duration;

@@ -12,7 +12,7 @@ enum class ExitCode : int {
   VerificationFailed = 1, // One or more obligations not proven
   SubsetViolation = 3,    // Input violates the allowed C++ subset
   ParseError = 4,         // Clang failed to parse the input file
-  InternalError = 5, // Internal pipeline error (lowering, emission, etc.)
+  InternalError = 5,      // Internal pipeline error (lowering, emission, etc.)
 };
 
 } // namespace arcanum
