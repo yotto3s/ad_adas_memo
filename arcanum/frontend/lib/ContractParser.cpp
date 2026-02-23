@@ -22,6 +22,7 @@ constexpr unsigned DECIMAL_BASE = 10;
 /// Prefix strings for contract annotation lines.
 constexpr llvm::StringLiteral REQUIRES_PREFIX("requires:");
 constexpr llvm::StringLiteral ENSURES_PREFIX("ensures:");
+constexpr llvm::StringLiteral OVERFLOW_PREFIX("overflow:");
 } // namespace
 
 ContractExprPtr ContractExpr::makeIntLiteral(int64_t val) {
@@ -402,10 +403,22 @@ parseContracts(clang::ASTContext& context) {
                        << funcLine << "): failed to parse 'ensures' clause: '"
                        << exprText << "' (contract will be ignored)\n";
         }
+      } else if (lineRef.starts_with(OVERFLOW_PREFIX)) {
+        auto modeText = lineRef.drop_front(OVERFLOW_PREFIX.size()).trim();
+        if (modeText == "trap" || modeText == "wrap" ||
+            modeText == "saturate") {
+          info.overflowMode = modeText.str();
+        } else {
+          llvm::errs() << "warning: in function '" << funcName << "' (line "
+                       << funcLine << "): unknown overflow mode '" << modeText
+                       << "'; expected 'trap', 'wrap', or 'saturate' (ignored, "
+                          "defaulting to 'trap')\n";
+        }
       }
     }
 
-    if (!info.preconditions.empty() || !info.postconditions.empty()) {
+    if (!info.preconditions.empty() || !info.postconditions.empty() ||
+        info.overflowMode != "trap") {
       result[funcDecl] = std::move(info);
     }
   }
