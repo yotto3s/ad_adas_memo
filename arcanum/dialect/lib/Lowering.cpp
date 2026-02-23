@@ -87,9 +87,6 @@ private:
   mlir::Type getArcType(clang::QualType type) {
     auto canonical = type.getCanonicalType();
     if (canonical->isVoidType()) {
-      // Void type should not appear in Slice 1 (SubsetEnforcer allows void
-      // return types, but they produce no return value).  Map to i32 as a
-      // conservative fallback; future slices will handle void properly.
       llvm::errs()
           << "warning: void type mapped to i32 in getArcType fallback\n";
       DiagnosticTracker::recordFallback();
@@ -98,8 +95,31 @@ private:
     if (canonical->isBooleanType()) {
       return arc::BoolType::get(&mlirCtx);
     }
-    // Default to i32 for integer types in Slice 1
+    // Map integer types using Clang's type size and signedness queries.
+    if (canonical->isIntegerType()) {
+      unsigned width = static_cast<unsigned>(astCtx.getTypeSize(canonical));
+      bool isSigned = canonical->isSignedIntegerType();
+      return arc::IntType::get(&mlirCtx, width, isSigned);
+    }
+    // Fallback for unrecognized types
+    llvm::errs() << "warning: unrecognized type in getArcType, defaulting to "
+                    "i32\n";
+    DiagnosticTracker::recordFallback();
     return arc::IntType::get(&mlirCtx, 32, true);
+  }
+
+  /// Set overflow attribute on an arithmetic op.
+  /// Unsigned types always get "wrap" (C++ unsigned wraps).
+  /// Signed types use the function-level overflow mode.
+  void setOverflowAttr(mlir::Operation* op) {
+    auto resultType = op->getResult(0).getType();
+    if (auto intType = llvm::dyn_cast<arc::IntType>(resultType)) {
+      if (!intType.getIsSigned()) {
+        op->setAttr("overflow", builder.getStringAttr("wrap"));
+      } else {
+        op->setAttr("overflow", builder.getStringAttr(currentOverflowMode));
+      }
+    }
   }
 
   void lowerFunction(clang::FunctionDecl* funcDecl) {
@@ -114,13 +134,16 @@ private:
     mlir::Type resultType = getArcType(funcDecl->getReturnType());
     auto funcType = builder.getFunctionType(paramTypes, {resultType});
 
-    // Get contract strings if present
+    // Get contract strings and overflow mode if present
     mlir::StringAttr requiresAttr;
     mlir::StringAttr ensuresAttr;
+    currentOverflowMode = "trap"; // Reset to default for each function
     auto it = contracts.find(funcDecl);
     if (it != contracts.end()) {
-      // Serialize contract expressions as string attributes for Slice 1.
-      // Future slices will use structured MLIR attributes.
+      // Read overflow mode from contract
+      currentOverflowMode = it->second.overflowMode;
+
+      // Serialize contract expressions as string attributes.
       std::string reqStr;
       std::string ensStr;
       for (size_t i = 0; i < it->second.preconditions.size(); ++i) {
@@ -147,6 +170,9 @@ private:
     auto funcOp = builder.create<arc::FuncOp>(loc, builder.getStringAttr(name),
                                               mlir::TypeAttr::get(funcType),
                                               requiresAttr, ensuresAttr);
+
+    // Store overflow mode on the function
+    funcOp->setAttr("overflow", builder.getStringAttr(currentOverflowMode));
 
     // Store parameter names as an attribute for the WhyML emitter
     llvm::SmallVector<mlir::Attribute> paramNameAttrs;
@@ -271,10 +297,12 @@ private:
 
     if (const auto* intLit = llvm::dyn_cast<clang::IntegerLiteral>(expr)) {
       auto val = intLit->getValue().getSExtValue();
+      auto litType = getArcType(intLit->getType());
       return builder
           .create<arc::ConstantOp>(
-              loc, arc::IntType::get(&mlirCtx, 32, true),
-              builder.getI32IntegerAttr(static_cast<int32_t>(val)))
+              loc, litType,
+              builder.getIntegerAttr(builder.getIntegerType(32),
+                                     static_cast<int32_t>(val)))
           .getResult();
     }
 
@@ -305,21 +333,31 @@ private:
       }
 
       switch (binOp->getOpcode()) {
-      case clang::BO_Add:
-        return builder.create<arc::AddOp>(loc, lhs->getType(), *lhs, *rhs)
-            .getResult();
-      case clang::BO_Sub:
-        return builder.create<arc::SubOp>(loc, lhs->getType(), *lhs, *rhs)
-            .getResult();
-      case clang::BO_Mul:
-        return builder.create<arc::MulOp>(loc, lhs->getType(), *lhs, *rhs)
-            .getResult();
-      case clang::BO_Div:
-        return builder.create<arc::DivOp>(loc, lhs->getType(), *lhs, *rhs)
-            .getResult();
-      case clang::BO_Rem:
-        return builder.create<arc::RemOp>(loc, lhs->getType(), *lhs, *rhs)
-            .getResult();
+      case clang::BO_Add: {
+        auto op = builder.create<arc::AddOp>(loc, lhs->getType(), *lhs, *rhs);
+        setOverflowAttr(op);
+        return op.getResult();
+      }
+      case clang::BO_Sub: {
+        auto op = builder.create<arc::SubOp>(loc, lhs->getType(), *lhs, *rhs);
+        setOverflowAttr(op);
+        return op.getResult();
+      }
+      case clang::BO_Mul: {
+        auto op = builder.create<arc::MulOp>(loc, lhs->getType(), *lhs, *rhs);
+        setOverflowAttr(op);
+        return op.getResult();
+      }
+      case clang::BO_Div: {
+        auto op = builder.create<arc::DivOp>(loc, lhs->getType(), *lhs, *rhs);
+        setOverflowAttr(op);
+        return op.getResult();
+      }
+      case clang::BO_Rem: {
+        auto op = builder.create<arc::RemOp>(loc, lhs->getType(), *lhs, *rhs);
+        setOverflowAttr(op);
+        return op.getResult();
+      }
       case clang::BO_LT:
         return builder
             .create<arc::CmpOp>(loc, arc::BoolType::get(&mlirCtx),
@@ -378,15 +416,25 @@ private:
             .getResult();
       case clang::UO_Minus: {
         auto zero = builder.create<arc::ConstantOp>(
-            loc, arc::IntType::get(&mlirCtx, 32, true),
-            builder.getI32IntegerAttr(0));
-        return builder
-            .create<arc::SubOp>(loc, operand->getType(), zero, *operand)
-            .getResult();
+            loc, operand->getType(),
+            builder.getIntegerAttr(builder.getIntegerType(32), 0));
+        auto subOp =
+            builder.create<arc::SubOp>(loc, operand->getType(), zero, *operand);
+        setOverflowAttr(subOp);
+        return subOp.getResult();
       }
       default:
         break;
       }
+    }
+
+    if (const auto* castExpr = llvm::dyn_cast<clang::CXXStaticCastExpr>(expr)) {
+      auto subExpr = lowerExpr(castExpr->getSubExpr(), valueMap);
+      if (!subExpr) {
+        return std::nullopt;
+      }
+      auto targetType = getArcType(castExpr->getType());
+      return builder.create<arc::CastOp>(loc, targetType, *subExpr).getResult();
     }
 
     // Propagate failure instead of polluting the MLIR module with zero
@@ -424,6 +472,7 @@ private:
   const std::map<const clang::FunctionDecl*, ContractInfo>& contracts;
   mlir::OpBuilder builder;
   mlir::OwningOpRef<mlir::ModuleOp> module;
+  std::string currentOverflowMode = "trap";
 };
 
 } // namespace

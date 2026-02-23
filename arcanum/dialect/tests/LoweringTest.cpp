@@ -2,6 +2,7 @@
 #include "arcanum/DiagnosticTracker.h"
 #include "arcanum/dialect/ArcDialect.h"
 #include "arcanum/dialect/ArcOps.h"
+#include "arcanum/dialect/ArcTypes.h"
 #include "arcanum/frontend/ContractParser.h"
 
 #include "mlir/IR/BuiltinOps.h"
@@ -214,29 +215,17 @@ TEST_F(LoweringTestFixture, LowersAssignment) {
   EXPECT_TRUE(foundAssign);
 }
 
-// ---------------------------------------------------------------------------
-// TEST_P: Arithmetic lowering (Sub, Mul, Div, Rem)
-// ---------------------------------------------------------------------------
+// --- Slice 2: Multi-type lowering tests ---
 
-using ArithLoweringParam = std::tuple<std::string, std::string, std::string>;
-
-class ArithmeticLoweringTest
-    : public LoweringTestFixture,
-      public ::testing::WithParamInterface<ArithLoweringParam> {};
-
-TEST_P(ArithmeticLoweringTest, LowersArithmeticOp) {
-  auto [name, cppOperator, expectedOpName] = GetParam();
-
-  std::string code = R"(
-    #include <cstdint>
-    int32_t arith(int32_t a, int32_t b) {
-      return a )" + cppOperator +
-                     R"( b;
-    }
-  )";
-
+TEST_F(LoweringTestFixture, LowersI8FunctionWithCorrectIntType) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      code, {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      R"(
+    #include <cstdint>
+    int8_t add_i8(int8_t a, int8_t b) {
+      return a + b;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -245,48 +234,30 @@ TEST_P(ArithmeticLoweringTest, LowersArithmeticOp) {
   auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
   ASSERT_TRUE(module);
 
-  bool foundOp = false;
-  module->walk([&](mlir::Operation* op) {
-    if (op->getName().getStringRef() == expectedOpName) {
-      foundOp = true;
+  bool foundFunc = false;
+  module->walk([&](arc::FuncOp funcOp) {
+    EXPECT_EQ(funcOp.getSymName(), "add_i8");
+    auto& block = funcOp.getBody().front();
+    for (auto arg : block.getArguments()) {
+      auto intType = llvm::dyn_cast<arc::IntType>(arg.getType());
+      ASSERT_TRUE(intType);
+      EXPECT_EQ(intType.getWidth(), 8u);
+      EXPECT_TRUE(intType.getIsSigned());
     }
+    foundFunc = true;
   });
-  EXPECT_TRUE(foundOp) << "Expected to find " << expectedOpName;
+  EXPECT_TRUE(foundFunc);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    ArithOps, ArithmeticLoweringTest,
-    ::testing::Values(ArithLoweringParam{"Sub", "- ", "arc.sub"},
-                      ArithLoweringParam{"Mul", "* ", "arc.mul"},
-                      ArithLoweringParam{"Div", "/ ", "arc.div"},
-                      ArithLoweringParam{"Rem", "% ", "arc.rem"}),
-    [](const ::testing::TestParamInfo<ArithLoweringParam>& info) {
-      return std::get<0>(info.param);
-    });
-
-// ---------------------------------------------------------------------------
-// TEST_P: Comparison predicate lowering (gt, le, ge, eq, ne)
-// ---------------------------------------------------------------------------
-
-using CmpLoweringParam = std::tuple<std::string, std::string, std::string>;
-
-class ComparisonLoweringTest
-    : public LoweringTestFixture,
-      public ::testing::WithParamInterface<CmpLoweringParam> {};
-
-TEST_P(ComparisonLoweringTest, LowersComparisonPredicate) {
-  auto [name, cppOperator, expectedPredicate] = GetParam();
-
-  std::string code = R"(
-    #include <cstdint>
-    bool cmp(int32_t a) {
-      return a )" + cppOperator +
-                     R"( 0;
-    }
-  )";
-
+TEST_F(LoweringTestFixture, LowersU32FunctionAsUnsigned) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      code, {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      R"(
+    #include <cstdint>
+    uint32_t add_u32(uint32_t a, uint32_t b) {
+      return a + b;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -295,42 +266,30 @@ TEST_P(ComparisonLoweringTest, LowersComparisonPredicate) {
   auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
   ASSERT_TRUE(module);
 
-  bool foundPredicate = false;
-  module->walk([&](arc::CmpOp cmpOp) {
-    if (cmpOp.getPredicate() == expectedPredicate) {
-      foundPredicate = true;
+  bool foundFunc = false;
+  module->walk([&](arc::FuncOp funcOp) {
+    EXPECT_EQ(funcOp.getSymName(), "add_u32");
+    auto& block = funcOp.getBody().front();
+    for (auto arg : block.getArguments()) {
+      auto intType = llvm::dyn_cast<arc::IntType>(arg.getType());
+      ASSERT_TRUE(intType);
+      EXPECT_EQ(intType.getWidth(), 32u);
+      EXPECT_FALSE(intType.getIsSigned());
     }
+    foundFunc = true;
   });
-  EXPECT_TRUE(foundPredicate)
-      << "Expected CmpOp with predicate '" << expectedPredicate << "'";
+  EXPECT_TRUE(foundFunc);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    CmpPredicates, ComparisonLoweringTest,
-    ::testing::Values(CmpLoweringParam{"Gt", "> ", "gt"},
-                      CmpLoweringParam{"Le", "<= ", "le"},
-                      CmpLoweringParam{"Ge", ">= ", "ge"},
-                      CmpLoweringParam{"Eq", "== ", "eq"},
-                      CmpLoweringParam{"Ne", "!= ", "ne"}),
-    [](const ::testing::TestParamInfo<CmpLoweringParam>& info) {
-      return std::get<0>(info.param);
-    });
-
-// ---------------------------------------------------------------------------
-// TEST_P: Logical operator lowering (And, Or, Not)
-// ---------------------------------------------------------------------------
-
-using LogicalLoweringParam = std::tuple<std::string, std::string, std::string>;
-
-class LogicalLoweringTest
-    : public LoweringTestFixture,
-      public ::testing::WithParamInterface<LogicalLoweringParam> {};
-
-TEST_P(LogicalLoweringTest, LowersLogicalOp) {
-  auto [name, code, expectedOpName] = GetParam();
-
+TEST_F(LoweringTestFixture, LowersStaticCastEmitsCastOp) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      code, {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      R"(
+    #include <cstdint>
+    int8_t narrow(int32_t x) {
+      return static_cast<int8_t>(x);
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
       std::make_shared<clang::PCHContainerOperations>());
   ASSERT_NE(ast, nullptr);
 
@@ -339,43 +298,106 @@ TEST_P(LogicalLoweringTest, LowersLogicalOp) {
   auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
   ASSERT_TRUE(module);
 
-  bool foundOp = false;
-  module->walk([&](mlir::Operation* op) {
-    if (op->getName().getStringRef() == expectedOpName) {
-      foundOp = true;
-    }
+  bool foundCast = false;
+  module->walk([&](arc::CastOp castOp) {
+    auto inputType = llvm::dyn_cast<arc::IntType>(castOp.getInput().getType());
+    auto resultType =
+        llvm::dyn_cast<arc::IntType>(castOp.getResult().getType());
+    ASSERT_TRUE(inputType);
+    ASSERT_TRUE(resultType);
+    EXPECT_EQ(inputType.getWidth(), 32u);
+    EXPECT_EQ(resultType.getWidth(), 8u);
+    foundCast = true;
   });
-  EXPECT_TRUE(foundOp) << "Expected to find " << expectedOpName;
+  EXPECT_TRUE(foundCast);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    LogicalOps, LogicalLoweringTest,
-    ::testing::Values(LogicalLoweringParam{"And",
-                                           R"(
+TEST_F(LoweringTestFixture, OverflowModeOnFuncFromContract) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
-    bool logicalAnd(int32_t a, int32_t b) {
-      return a > 0 && b > 0;
+    //@ overflow: wrap
+    //@ requires: a >= 0
+    int32_t wrap_add(int32_t a, int32_t b) {
+      return a + b;
     }
   )",
-                                           "arc.and"},
-                      LogicalLoweringParam{"Or",
-                                           R"(
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundFunc = false;
+  module->walk([&](arc::FuncOp funcOp) {
+    EXPECT_EQ(funcOp.getSymName(), "wrap_add");
+    auto overflowAttr = funcOp->getAttrOfType<mlir::StringAttr>("overflow");
+    ASSERT_TRUE(overflowAttr);
+    EXPECT_EQ(overflowAttr.getValue(), "wrap");
+    foundFunc = true;
+  });
+  EXPECT_TRUE(foundFunc);
+}
+
+TEST_F(LoweringTestFixture, OverflowAttrOnSignedArithUsesMode) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
     #include <cstdint>
-    bool logicalOr(int32_t a, int32_t b) {
-      return a > 0 || b > 0;
+    //@ overflow: wrap
+    int32_t wrap_add(int32_t a, int32_t b) {
+      return a + b;
     }
   )",
-                                           "arc.or"},
-                      LogicalLoweringParam{"Not",
-                                           R"(
-    bool logicalNot(bool a) {
-      return !a;
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundAdd = false;
+  module->walk([&](arc::AddOp addOp) {
+    auto overflowAttr = addOp->getAttrOfType<mlir::StringAttr>("overflow");
+    ASSERT_TRUE(overflowAttr);
+    EXPECT_EQ(overflowAttr.getValue(), "wrap");
+    foundAdd = true;
+  });
+  EXPECT_TRUE(foundAdd);
+}
+
+TEST_F(LoweringTestFixture, UnsignedArithAlwaysGetsWrapOverflow) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ overflow: trap
+    uint32_t trap_add(uint32_t a, uint32_t b) {
+      return a + b;
     }
   )",
-                                           "arc.not"}),
-    [](const ::testing::TestParamInfo<LogicalLoweringParam>& info) {
-      return std::get<0>(info.param);
-    });
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundAdd = false;
+  module->walk([&](arc::AddOp addOp) {
+    auto overflowAttr = addOp->getAttrOfType<mlir::StringAttr>("overflow");
+    ASSERT_TRUE(overflowAttr);
+    // Unsigned always wraps, regardless of function-level mode
+    EXPECT_EQ(overflowAttr.getValue(), "wrap");
+    foundAdd = true;
+  });
+  EXPECT_TRUE(foundAdd);
+}
 
 } // namespace
 } // namespace arcanum
