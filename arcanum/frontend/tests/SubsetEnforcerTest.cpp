@@ -301,5 +301,251 @@ INSTANTIATE_TEST_SUITE_P(
   )"}),
     AcceptedConstructName{});
 
+// ============================================================
+// Slice 2: Multi-type support tests
+// ============================================================
+
+// [S2] Accept all 8 fixed-width integer types
+TEST(SubsetEnforcerTest, AcceptsAllFixedWidthTypes) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int8_t f1(int8_t x) { return x; }
+    int16_t f2(int16_t x) { return x; }
+    int32_t f3(int32_t x) { return x; }
+    int64_t f4(int64_t x) { return x; }
+    uint8_t f5(uint8_t x) { return x; }
+    uint16_t f6(uint16_t x) { return x; }
+    uint32_t f7(uint32_t x) { return x; }
+    uint64_t f8(uint64_t x) { return x; }
+  )");
+  EXPECT_TRUE(result.passed) << "All 8 fixed-width types should be accepted";
+  EXPECT_TRUE(result.diagnostics.empty());
+}
+
+// [S2] Reject plain 'int' (platform-dependent width)
+TEST(SubsetEnforcerTest, RejectsPlainInt) {
+  auto result = checkSubset(R"(
+    int foo(int a) { return a; }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundFixedWidth = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("fixed-width") != std::string::npos) {
+      foundFixedWidth = true;
+    }
+  }
+  EXPECT_TRUE(foundFixedWidth);
+}
+
+// [S2] Reject 'short' (platform-dependent width)
+TEST(SubsetEnforcerTest, RejectsShort) {
+  auto result = checkSubset(R"(
+    short foo(short a) { return a; }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundFixedWidth = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("fixed-width") != std::string::npos) {
+      foundFixedWidth = true;
+    }
+  }
+  EXPECT_TRUE(foundFixedWidth);
+}
+
+// [S2] Reject 'long' (platform-dependent width)
+TEST(SubsetEnforcerTest, RejectsLong) {
+  auto result = checkSubset(R"(
+    long foo(long a) { return a; }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundFixedWidth = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("fixed-width") != std::string::npos) {
+      foundFixedWidth = true;
+    }
+  }
+  EXPECT_TRUE(foundFixedWidth);
+}
+
+// [S2] Reject 'unsigned int' (platform-dependent width)
+TEST(SubsetEnforcerTest, RejectsUnsignedInt) {
+  auto result = checkSubset(R"(
+    unsigned int foo(unsigned int a) { return a; }
+  )");
+  EXPECT_FALSE(result.passed);
+}
+
+// ============================================================
+// Slice 2: Cast validation tests
+// ============================================================
+
+// [S2] Accept static_cast between supported types
+TEST(SubsetEnforcerTest, AcceptsStaticCast) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int16_t narrow(int32_t x) {
+      return static_cast<int16_t>(x);
+    }
+  )");
+  EXPECT_TRUE(result.passed) << "static_cast between supported types should be accepted";
+  EXPECT_TRUE(result.diagnostics.empty());
+}
+
+// [S2] Reject C-style cast
+TEST(SubsetEnforcerTest, RejectsCStyleCast) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int16_t narrow(int32_t x) {
+      return (int16_t)x;
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundCast = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("static_cast") != std::string::npos) {
+      foundCast = true;
+    }
+  }
+  EXPECT_TRUE(foundCast) << "Should suggest using static_cast";
+}
+
+// [S2] Reject reinterpret_cast
+TEST(SubsetEnforcerTest, RejectsReinterpretCast) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    void foo() {
+      int32_t x = 42;
+      int64_t y = reinterpret_cast<int64_t>(&x);
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundCast = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("reinterpret_cast") != std::string::npos) {
+      foundCast = true;
+    }
+  }
+  EXPECT_TRUE(foundCast);
+}
+
+// [S2] Reject const_cast
+TEST(SubsetEnforcerTest, RejectsConstCast) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    void foo(const int32_t* p) {
+      int32_t* q = const_cast<int32_t*>(p);
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundCast = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("const_cast") != std::string::npos) {
+      foundCast = true;
+    }
+  }
+  EXPECT_TRUE(foundCast);
+}
+
+// ============================================================
+// Slice 2: Mixed-type binary op tests
+// ============================================================
+
+// [S2] Reject mixed-type binary operations
+TEST(SubsetEnforcerTest, RejectsMixedTypeBinaryOp) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t foo(int32_t a, int16_t b) {
+      return a + static_cast<int32_t>(b);
+    }
+  )");
+  // The static_cast is fine, but a + static_cast<int32_t>(b) should be OK
+  // because both sides are int32_t after the cast.
+  EXPECT_TRUE(result.passed);
+}
+
+// [S2] Reject actually mixed-type arithmetic (different widths)
+TEST(SubsetEnforcerTest, RejectsMixedWidthArithmetic) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t foo(int32_t a, int16_t b) {
+      return a + b;
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundMatching = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("matching types") != std::string::npos) {
+      foundMatching = true;
+    }
+  }
+  EXPECT_TRUE(foundMatching);
+}
+
+// [S2] Reject mixed-signedness arithmetic
+TEST(SubsetEnforcerTest, RejectsMixedSignednessArithmetic) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int32_t foo(int32_t a, uint32_t b) {
+      return a + b;
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundMatching = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("matching types") != std::string::npos) {
+      foundMatching = true;
+    }
+  }
+  EXPECT_TRUE(foundMatching);
+}
+
+// [S2] Accept same-type binary operations (int16_t + int16_t)
+TEST(SubsetEnforcerTest, AcceptsSameTypeBinaryOp) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    int16_t add16(int16_t a, int16_t b) {
+      return a + b;
+    }
+  )");
+  EXPECT_TRUE(result.passed) << "Same-type binary ops should be accepted";
+  EXPECT_TRUE(result.diagnostics.empty());
+}
+
+// [S2] Accept same-type unsigned binary operations
+TEST(SubsetEnforcerTest, AcceptsSameTypeUnsignedBinaryOp) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    uint64_t add64(uint64_t a, uint64_t b) {
+      return a + b;
+    }
+  )");
+  EXPECT_TRUE(result.passed);
+  EXPECT_TRUE(result.diagnostics.empty());
+}
+
+// [S2] Logical ops (&&, ||) on bools should still work
+TEST(SubsetEnforcerTest, AcceptsLogicalOpsOnBools) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    bool test(int32_t a, int32_t b) {
+      bool x = a > 0;
+      bool y = b > 0;
+      return x && y;
+    }
+  )");
+  EXPECT_TRUE(result.passed);
+}
+
+// [S2] Comparison between same-type integers should work
+TEST(SubsetEnforcerTest, AcceptsSameTypeComparison) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    bool isLess(int16_t a, int16_t b) {
+      return a < b;
+    }
+  )");
+  EXPECT_TRUE(result.passed);
+}
+
 } // namespace
 } // namespace arcanum

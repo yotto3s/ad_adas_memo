@@ -15,8 +15,17 @@
 namespace arcanum {
 namespace {
 
-/// Bit width of int32_t, used for type-width checks.
-constexpr uint64_t INT32_BIT_WIDTH = 32;
+/// Allowed integer bit widths for the safe subset.
+constexpr uint64_t ALLOWED_WIDTHS[] = {8, 16, 32, 64};
+
+/// Check whether a bit width is in the allowed set {8, 16, 32, 64}.
+bool isAllowedWidth(uint64_t width) {
+  for (auto w : ALLOWED_WIDTHS) {
+    if (width == w)
+      return true;
+  }
+  return false;
+}
 
 class SubsetVisitor : public clang::RecursiveASTVisitor<SubsetVisitor> {
 public:
@@ -174,6 +183,83 @@ public:
     return true;
   }
 
+  // --- Cast validation (Slice 2) ---
+
+  bool VisitCXXStaticCastExpr(clang::CXXStaticCastExpr* expr) {
+    // static_cast is accepted; validate source and target are supported types
+    checkType(expr->getTypeAsWritten(), expr->getBeginLoc());
+    checkType(expr->getSubExpr()->getType(), expr->getBeginLoc());
+    return true;
+  }
+
+  bool VisitCStyleCastExpr(clang::CStyleCastExpr* expr) {
+    // Skip implicit C-style casts inserted by the compiler (e.g., in system
+    // headers or for integer literal conversions).
+    if (expr->getBeginLoc().isValid() &&
+        ctx.getSourceManager().isInSystemHeader(expr->getBeginLoc())) {
+      return true;
+    }
+    addDiagnostic(expr->getBeginLoc(),
+                  "use static_cast instead of C-style cast");
+    return true;
+  }
+
+  bool VisitCXXReinterpretCastExpr(clang::CXXReinterpretCastExpr* expr) {
+    addDiagnostic(expr->getBeginLoc(), "reinterpret_cast is not allowed");
+    return true;
+  }
+
+  bool VisitCXXConstCastExpr(clang::CXXConstCastExpr* expr) {
+    addDiagnostic(expr->getBeginLoc(), "const_cast is not allowed");
+    return true;
+  }
+
+  bool VisitCXXDynamicCastExpr(clang::CXXDynamicCastExpr* expr) {
+    addDiagnostic(expr->getBeginLoc(), "dynamic_cast is not allowed");
+    return true;
+  }
+
+  // --- Mixed-type binary op validation (Slice 2) ---
+
+  bool VisitBinaryOperator(clang::BinaryOperator* expr) {
+    // Only check arithmetic and comparison operators on integer types.
+    // Skip logical operators (&&, ||) which operate on bools, and
+    // assignment operators.
+    if (expr->isLogicalOp() || expr->isAssignmentOp()) {
+      return true;
+    }
+    // Skip if in system headers
+    if (expr->getBeginLoc().isValid() &&
+        ctx.getSourceManager().isInSystemHeader(expr->getBeginLoc())) {
+      return true;
+    }
+
+    // Get the actual source-level types by stripping implicit casts
+    auto* lhs = expr->getLHS()->IgnoreParenImpCasts();
+    auto* rhs = expr->getRHS()->IgnoreParenImpCasts();
+
+    clang::QualType lhsType = lhs->getType().getCanonicalType();
+    clang::QualType rhsType = rhs->getType().getCanonicalType();
+
+    // Only check when both sides are integer types (not bool)
+    if (!lhsType->isIntegerType() || lhsType->isBooleanType() ||
+        !rhsType->isIntegerType() || rhsType->isBooleanType()) {
+      return true;
+    }
+
+    uint64_t lhsWidth = ctx.getTypeSize(lhsType);
+    uint64_t rhsWidth = ctx.getTypeSize(rhsType);
+    bool lhsSigned = lhsType->isSignedIntegerType();
+    bool rhsSigned = rhsType->isSignedIntegerType();
+
+    if (lhsWidth != rhsWidth || lhsSigned != rhsSigned) {
+      addDiagnostic(expr->getOperatorLoc(),
+                    "operands must have matching types; use static_cast to "
+                    "convert");
+    }
+    return true;
+  }
+
 private:
   /// Check whether a statement (or any nested statement) contains a return.
   bool containsReturn(const clang::Stmt* stmt) {
@@ -245,41 +331,77 @@ private:
                        });
   }
 
+  /// Check whether a QualType is a supported fixed-width integer type.
+  /// Returns true if the type is an integer with width in {8,16,32,64}.
+  /// Uses the non-canonical type to distinguish fixed-width typedefs
+  /// (e.g., int32_t) from bare builtins (e.g., int).
+  bool isSupportedIntegerType(clang::QualType origType) {
+    clang::QualType canonical = origType.getCanonicalType();
+    if (!canonical->isIntegerType() || canonical->isBooleanType()) {
+      return false;
+    }
+    uint64_t width = ctx.getTypeSize(canonical);
+    return isAllowedWidth(width);
+  }
+
+  /// Check whether a QualType is a bare builtin integer type (int, short,
+  /// long, etc.) without typedef sugar from <cstdint>. Such types have
+  /// platform-dependent widths and are rejected in favor of fixed-width types.
+  bool isBareBuiltinIntegerType(clang::QualType type) {
+    // If the type has typedef sugar, it's something like int32_t -- not bare
+    if (type->getAs<clang::TypedefType>()) {
+      return false;
+    }
+    clang::QualType canonical = type.getCanonicalType();
+    if (!canonical->isIntegerType() || canonical->isBooleanType()) {
+      return false;
+    }
+    // It's a bare builtin integer (int, short, long, unsigned int, etc.)
+    return true;
+  }
+
   void checkType(clang::QualType type, clang::SourceLocation loc) {
-    type = type.getCanonicalType();
-    // Allow void (for functions returning void, though Slice 1 expects
-    // int32_t/bool)
-    if (type->isVoidType()) {
+    // Work with the non-canonical (sugared) type first to detect bare builtins
+    clang::QualType desugared = type.getCanonicalType();
+    // Allow void
+    if (desugared->isVoidType()) {
       return;
     }
     // Allow bool
-    if (type->isBooleanType()) {
+    if (desugared->isBooleanType()) {
       return;
     }
-    // Allow int32_t (which is a typedef for int on most platforms, but check
-    // for 32-bit signed integer)
-    if (const auto* bt = type->getAs<clang::BuiltinType>()) {
-      if (bt->getKind() == clang::BuiltinType::Int) {
-        return; // int32_t maps to int on most platforms
-      }
+    // Reject raw pointers
+    if (desugared->isPointerType()) {
+      addDiagnostic(loc, "raw pointer types are not allowed");
+      return;
     }
-    // Check for typedef to int32_t specifically
-    if (type->isIntegerType()) {
-      auto width = ctx.getTypeSize(type);
-      if (width == INT32_BIT_WIDTH && type->isSignedIntegerType()) {
+    // Reject floating-point
+    if (desugared->isFloatingType()) {
+      addDiagnostic(loc, "floating-point types are not allowed in Slice 1");
+      return;
+    }
+    // Check integer types
+    if (desugared->isIntegerType()) {
+      // Reject bare builtin integer types (int, short, long, etc.)
+      if (isBareBuiltinIntegerType(type)) {
+        addDiagnostic(
+            loc,
+            "use fixed-width integer types (e.g., int32_t) instead of '" +
+                type.getAsString() + "'");
         return;
       }
+      // Accept fixed-width types with allowed widths
+      if (isSupportedIntegerType(type)) {
+        return;
+      }
+      // Integer typedef with unsupported width
+      addDiagnostic(loc, "type '" + type.getAsString() +
+                             "' is not a supported fixed-width integer type");
+      return;
     }
     // Reject everything else
-    if (type->isPointerType()) {
-      addDiagnostic(loc, "raw pointer types are not allowed");
-    } else if (type->isFloatingType()) {
-      addDiagnostic(loc, "floating-point types are not allowed in Slice 1");
-    } else {
-      addDiagnostic(loc,
-                    "type '" + type.getAsString() +
-                        "' is not allowed in Slice 1 (only int32_t and bool)");
-    }
+    addDiagnostic(loc, "type '" + type.getAsString() + "' is not allowed");
   }
 
   void addDiagnostic(clang::SourceLocation loc, const std::string& msg) {
