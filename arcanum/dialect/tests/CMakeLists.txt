@@ -19,6 +19,18 @@ target_link_libraries(LoweringTest PRIVATE
 )
 gtest_discover_tests(LoweringTest)
 
+# --- BugReproLoweringTest ---
+add_executable(BugReproLoweringTest BugReproLoweringTest.cpp)
+target_link_libraries(BugReproLoweringTest PRIVATE
+  ArcanumLowering
+  ArcanumFrontend
+  ArcDialect
+  gtest_main
+  clangTooling
+  MLIRIR
+)
+gtest_discover_tests(BugReproLoweringTest)
+
 # --- PassesTest ---
 add_executable(PassesTest PassesTest.cpp)
 target_link_libraries(PassesTest PRIVATE

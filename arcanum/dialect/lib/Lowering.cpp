@@ -96,10 +96,15 @@ private:
       return arc::BoolType::get(&mlirCtx);
     }
     // Map integer types using Clang's type size and signedness queries.
-    // Note: C integer promotion (e.g., int8_t + int8_t promoting to int)
-    // is faithfully preserved -- Clang's AST already reflects promoted
-    // types in binary expressions, so the lowering sees the post-promotion
-    // type naturally.
+    // Note: C integer promotion is intentionally NOT preserved.  The
+    // lowerExpr() visitor calls IgnoreParenImpCasts() on operands, which
+    // strips implicit promotion casts.  Binary operators therefore use the
+    // source-level (narrow) type rather than the C++ promoted type.  This
+    // is a deliberate design choice: Arcanum verifies at the source type
+    // level, producing stricter overflow checks (e.g., i8 bounds for
+    // int8_t arithmetic rather than i32 bounds).  The spec mandates
+    // rejecting non-fixed-width types and the tool operates on declared
+    // types, not promoted types.
     if (canonical->isIntegerType()) {
       unsigned width = static_cast<unsigned>(astCtx.getTypeSize(canonical));
       bool isSigned = canonical->isSignedIntegerType();
@@ -115,14 +120,19 @@ private:
   /// Set overflow attribute on an arithmetic op.
   /// Unsigned types always get "wrap" (C++ unsigned wraps).
   /// Signed types use the function-level overflow mode.
+  /// Per spec, default "trap" mode omits the attribute (SC-5).
   void setOverflowAttr(mlir::Operation* op) {
     auto resultType = op->getResult(0).getType();
     if (auto intType = llvm::dyn_cast<arc::IntType>(resultType)) {
       if (!intType.getIsSigned()) {
         op->setAttr("overflow", builder.getStringAttr("wrap"));
-      } else {
+      } else if (currentOverflowMode != "trap") {
+        // Only set overflow attribute on signed types when not "trap"
+        // (default). Per spec: "Default: trap (attribute omitted)"
         op->setAttr("overflow", builder.getStringAttr(currentOverflowMode));
       }
+      // When currentOverflowMode == "trap", omit attribute; getOverflowMode()
+      // in WhyMLEmitter returns "trap" when no attribute is present.
     }
   }
 
@@ -175,7 +185,11 @@ private:
                                               mlir::TypeAttr::get(funcType),
                                               requiresAttr, ensuresAttr);
 
-    // Store overflow mode on the function
+    // Store overflow mode on the function.  Unlike arithmetic ops where
+    // the default "trap" mode is represented by omitting the attribute
+    // (see setOverflowAttr and SC-5), the FuncOp always carries the
+    // overflow attribute explicitly -- including "trap" -- for
+    // introspection and debugging purposes.
     funcOp->setAttr("overflow", builder.getStringAttr(currentOverflowMode));
 
     // Store parameter names as an attribute for the WhyML emitter
@@ -300,14 +314,24 @@ private:
     auto loc = getLoc(expr->getBeginLoc());
 
     if (const auto* intLit = llvm::dyn_cast<clang::IntegerLiteral>(expr)) {
-      auto val = intLit->getValue().getSExtValue();
       auto litType = getArcType(intLit->getType());
       auto intType = llvm::dyn_cast<arc::IntType>(litType);
       unsigned width = intType ? intType.getWidth() : 32;
+      if (!intType) {
+        // Unexpected type mapping failure; diagnostic for debugging.
+        llvm::errs() << "warning: integer literal type did not map to "
+                        "arc::IntType; defaulting to width 32\n";
+      }
+      // Use the APInt directly to avoid sign-extension issues for unsigned
+      // 64-bit literals that exceed INT64_MAX (F4).
+      llvm::APInt apVal = intLit->getValue();
+      if (apVal.getBitWidth() != width) {
+        apVal = apVal.sextOrTrunc(width);
+      }
       return builder
           .create<arc::ConstantOp>(
               loc, litType,
-              builder.getIntegerAttr(builder.getIntegerType(width), val))
+              builder.getIntegerAttr(builder.getIntegerType(width), apVal))
           .getResult();
     }
 
@@ -441,7 +465,13 @@ private:
         return std::nullopt;
       }
       auto targetType = getArcType(castExpr->getType());
-      return builder.create<arc::CastOp>(loc, targetType, *subExpr).getResult();
+      auto castOp = builder.create<arc::CastOp>(loc, targetType, *subExpr);
+      // Propagate overflow mode onto CastOp (SC-4).
+      // Casts inherit overflow mode from context (function-level).
+      if (currentOverflowMode != "trap") {
+        castOp->setAttr("overflow", builder.getStringAttr(currentOverflowMode));
+      }
+      return castOp.getResult();
     }
 
     // Propagate failure instead of polluting the MLIR module with zero

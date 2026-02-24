@@ -7,6 +7,15 @@ target_link_libraries(SubsetEnforcerTest PRIVATE
 )
 gtest_discover_tests(SubsetEnforcerTest)
 
+# --- BugReproSubsetEnforcerTest ---
+add_executable(BugReproSubsetEnforcerTest BugReproSubsetEnforcerTest.cpp)
+target_link_libraries(BugReproSubsetEnforcerTest PRIVATE
+  ArcanumFrontend
+  gtest_main
+  clangTooling
+)
+gtest_discover_tests(BugReproSubsetEnforcerTest)
+
 # --- ContractParserTest ---
 add_executable(ContractParserTest ContractParserTest.cpp)
 target_link_libraries(ContractParserTest PRIVATE

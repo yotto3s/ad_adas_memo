@@ -6,6 +6,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <gtest/gtest.h>
 
@@ -534,6 +535,68 @@ TEST_F(ArcDialectTest, MulOpAbsentOverflowAttributeIsNull) {
   EXPECT_FALSE(attr);
 
   module->destroy();
+}
+
+// ============================================================
+// TC-12: Type print tests — verify dialect printer output
+// ============================================================
+
+// Helper to print an MLIR type to string via the dialect printer.
+static std::string typeToString(mlir::Type type) {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  type.print(os);
+  return str;
+}
+
+// Verify that all 8 integer type mnemonics print correctly through
+// ArcDialect::printType (invoked by type.print()).
+TEST_F(ArcDialectTest, IntTypePrintMnemonics) {
+  EXPECT_EQ(typeToString(arc::IntType::get(&context_, 8, true)), "!arc.i8");
+  EXPECT_EQ(typeToString(arc::IntType::get(&context_, 16, true)), "!arc.i16");
+  EXPECT_EQ(typeToString(arc::IntType::get(&context_, 32, true)), "!arc.i32");
+  EXPECT_EQ(typeToString(arc::IntType::get(&context_, 64, true)), "!arc.i64");
+  EXPECT_EQ(typeToString(arc::IntType::get(&context_, 8, false)), "!arc.u8");
+  EXPECT_EQ(typeToString(arc::IntType::get(&context_, 16, false)), "!arc.u16");
+  EXPECT_EQ(typeToString(arc::IntType::get(&context_, 32, false)), "!arc.u32");
+  EXPECT_EQ(typeToString(arc::IntType::get(&context_, 64, false)), "!arc.u64");
+}
+
+// Verify BoolType prints correctly.
+TEST_F(ArcDialectTest, BoolTypePrintMnemonic) {
+  EXPECT_EQ(typeToString(arc::BoolType::get(&context_)), "!arc.bool");
+}
+
+// ============================================================
+// TC-13: IntType width validation via verify()
+// ============================================================
+
+// Verify that IntType::verify() rejects unsupported widths and accepts valid
+// ones. This tests the same validation logic used by IntType::parse() and
+// IntType::getChecked().
+TEST_F(ArcDialectTest, IntTypeVerifyRejectsInvalidWidth) {
+  // Suppress diagnostics emitted by verify
+  auto diagHandler = context_.getDiagEngine().registerHandler(
+      [](mlir::Diagnostic&) { return mlir::success(); });
+
+  auto emitError = [&]() {
+    return mlir::emitError(mlir::UnknownLoc::get(&context_));
+  };
+
+  // Invalid widths should fail
+  EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 0, true)));
+  EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 1, true)));
+  EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 12, true)));
+  EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 24, false)));
+  EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 128, true)));
+
+  // Valid widths should succeed (both signed and unsigned)
+  EXPECT_TRUE(mlir::succeeded(arc::IntType::verify(emitError, 8, true)));
+  EXPECT_TRUE(mlir::succeeded(arc::IntType::verify(emitError, 16, false)));
+  EXPECT_TRUE(mlir::succeeded(arc::IntType::verify(emitError, 32, true)));
+  EXPECT_TRUE(mlir::succeeded(arc::IntType::verify(emitError, 64, false)));
+
+  context_.getDiagEngine().eraseHandler(diagHandler);
 }
 
 } // namespace

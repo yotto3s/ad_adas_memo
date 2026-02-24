@@ -323,6 +323,11 @@ TEST(SubsetEnforcerTest, AcceptsAllFixedWidthTypes) {
 }
 
 // [S2] Accept plain 'int' (width 32 on target platforms)
+// NOTE: Platform-dependent -- 'int' is accepted because its width (32)
+// matches an allowed width on x86_64.  On platforms where 'int' has a
+// different width (e.g., 16-bit embedded targets), this test would fail.
+// See TODO(SC-1) in SubsetEnforcer.cpp and the corresponding note in
+// Lowering.cpp getArcType().
 TEST(SubsetEnforcerTest, AcceptsPlainInt) {
   auto result = checkSubset(R"(
     int foo(int a) { return a; }
@@ -331,6 +336,8 @@ TEST(SubsetEnforcerTest, AcceptsPlainInt) {
 }
 
 // [S2] Accept 'short' (width 16 on target platforms)
+// NOTE: Platform-dependent -- assumes 'short' is 16 bits (standard on
+// x86_64).  See TODO(SC-1) for the known spec deviation.
 TEST(SubsetEnforcerTest, AcceptsShort) {
   auto result = checkSubset(R"(
     short foo(short a) { return a; }
@@ -339,6 +346,9 @@ TEST(SubsetEnforcerTest, AcceptsShort) {
 }
 
 // [S2] Accept 'long' (width 64 on x86_64 Linux)
+// NOTE: Platform-dependent -- 'long' is 64 bits on LP64 (Linux x86_64)
+// but 32 bits on LLP64 (Windows x64).  This test would behave differently
+// on Windows.  See TODO(SC-1) for the known spec deviation.
 TEST(SubsetEnforcerTest, AcceptsLong) {
   auto result = checkSubset(R"(
     long foo(long a) { return a; }
@@ -348,6 +358,8 @@ TEST(SubsetEnforcerTest, AcceptsLong) {
 }
 
 // [S2] Accept 'unsigned int' (width 32 on target platforms)
+// NOTE: Platform-dependent -- assumes 'unsigned int' is 32 bits.
+// See TODO(SC-1) for the known spec deviation.
 TEST(SubsetEnforcerTest, AcceptsUnsignedInt) {
   auto result = checkSubset(R"(
     unsigned int foo(unsigned int a) { return a; }
@@ -579,6 +591,24 @@ TEST(SubsetEnforcerTest, AcceptsSameTypeComparison) {
     }
   )");
   EXPECT_TRUE(result.passed);
+}
+
+// [TC-15] Reject static_cast to unsupported type (e.g., float)
+TEST(SubsetEnforcerTest, RejectsStaticCastToUnsupportedType) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    float narrow(int32_t x) {
+      return static_cast<float>(x);
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundFloat = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("floating-point") != std::string::npos) {
+      foundFloat = true;
+    }
+  }
+  EXPECT_TRUE(foundFloat) << "Should reject static_cast to float";
 }
 
 } // namespace

@@ -12,6 +12,20 @@ target_link_libraries(WhyMLEmitterTest PRIVATE
 )
 gtest_discover_tests(WhyMLEmitterTest)
 
+# --- BugReproWhyMLEmitterTest ---
+add_executable(BugReproWhyMLEmitterTest BugReproWhyMLEmitterTest.cpp)
+target_link_libraries(BugReproWhyMLEmitterTest PRIVATE
+  ArcanumBackend
+  ArcanumLowering
+  ArcanumFrontend
+  ArcDialect
+  gtest_main
+  clangTooling
+  MLIRIR
+  LLVMSupport
+)
+gtest_discover_tests(BugReproWhyMLEmitterTest)
+
 # --- Why3RunnerTest ---
 add_executable(Why3RunnerTest Why3RunnerTest.cpp)
 target_link_libraries(Why3RunnerTest PRIVATE

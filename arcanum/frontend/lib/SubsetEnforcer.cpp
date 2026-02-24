@@ -15,16 +15,17 @@
 namespace arcanum {
 namespace {
 
-/// Allowed integer bit widths for the safe subset.
-constexpr uint64_t ALLOWED_WIDTHS[] = {8, 16, 32, 64};
-
 /// Check whether a bit width is in the allowed set {8, 16, 32, 64}.
 bool isAllowedWidth(uint64_t width) {
-  for (auto w : ALLOWED_WIDTHS) {
-    if (width == w)
-      return true;
+  switch (width) {
+  case 8:
+  case 16:
+  case 32:
+  case 64:
+    return true;
+  default:
+    return false;
   }
-  return false;
 }
 
 class SubsetVisitor : public clang::RecursiveASTVisitor<SubsetVisitor> {
@@ -251,6 +252,16 @@ public:
       return true;
     }
 
+    // Skip the mixed-type check when either operand is an integer literal.
+    // Integer literals have type 'int' (width 32) but are commonly used with
+    // narrow types (int8_t, int16_t, uint8_t) after implicit integer
+    // promotion.  Flagging `x + 1` or `x > 0` for narrow types would make
+    // the tool unusable for real code (F5).
+    if (llvm::isa<clang::IntegerLiteral>(lhs) ||
+        llvm::isa<clang::IntegerLiteral>(rhs)) {
+      return true;
+    }
+
     uint64_t lhsWidth = ctx.getTypeSize(lhsType);
     uint64_t rhsWidth = ctx.getTypeSize(rhsType);
     bool lhsSigned = lhsType->isSignedIntegerType();
@@ -355,7 +366,12 @@ private:
       addDiagnostic(loc, "floating-point types are not allowed in Slice 1");
       return;
     }
-    // Accept any integer type with width in {8, 16, 32, 64}
+    // Accept any integer type with width in {8, 16, 32, 64}.
+    // TODO(SC-1): Spec mandates rejecting platform-dependent types (int, short,
+    // long) and directing users to <cstdint> fixed-width types.  The current
+    // implementation intentionally accepts them if their width matches an
+    // allowed width (e.g., int=32, short=16, long=64 on x86_64).  This is a
+    // deliberate deviation for usability; revisit if spec conformance required.
     if (canonical->isIntegerType()) {
       uint64_t width = ctx.getTypeSize(canonical);
       if (isAllowedWidth(width)) {

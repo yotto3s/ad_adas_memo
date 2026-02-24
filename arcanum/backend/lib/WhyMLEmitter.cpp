@@ -21,20 +21,23 @@ constexpr llvm::StringLiteral RESULT_TOKEN("\\result");
 std::string getMinStr(arc::IntType type) {
   llvm::APInt minVal = type.getMinValue();
   llvm::SmallString<32> str;
-  minVal.toStringSigned(str);
+  if (type.getIsSigned()) {
+    minVal.toStringSigned(str);
+  } else {
+    minVal.toStringUnsigned(str);
+  }
   return std::string(str);
 }
 
 /// Get the maximum value of an IntType as a decimal string.
 std::string getMaxStr(arc::IntType type) {
   llvm::APInt maxVal = type.getMaxValue();
-  if (type.getIsSigned()) {
-    llvm::SmallString<32> str;
-    maxVal.toStringSigned(str);
-    return std::string(str);
-  }
   llvm::SmallString<32> str;
-  maxVal.toStringUnsigned(str);
+  if (type.getIsSigned()) {
+    maxVal.toStringSigned(str);
+  } else {
+    maxVal.toStringUnsigned(str);
+  }
   return std::string(str);
 }
 
@@ -234,13 +237,19 @@ private:
         mlir::isa<arc::BoolType>(funcType.getResult(0))) {
       needsBool = true;
     }
-    // Scan for DivOp/RemOp or wrap-mode arithmetic to determine if
+    // Scan for DivOp/RemOp or wrap-mode arithmetic/casts to determine if
     // ComputerDivision is needed (wrap mode uses mod for modular arithmetic)
     funcOp.walk([&](mlir::Operation* op) {
       if (llvm::isa<arc::DivOp>(op) || llvm::isa<arc::RemOp>(op)) {
         needsComputerDivision = true;
       }
       if (llvm::isa<arc::AddOp, arc::SubOp, arc::MulOp>(op)) {
+        if (getOverflowMode(op) == "wrap") {
+          needsComputerDivision = true;
+        }
+      }
+      // CastOp with wrap mode also uses mod for modular reduction
+      if (llvm::isa<arc::CastOp>(op)) {
         if (getOverflowMode(op) == "wrap") {
           needsComputerDivision = true;
         }
@@ -355,23 +364,36 @@ private:
         modExpr =
             "(mod " + rawExpr + " " + getPowerOfTwo(intType.getWidth()) + ")";
       } else if (intType) {
-        // Signed wrap: mod (r + 2^(N-1)) 2^N - 2^(N-1)
+        // Signed wrap: ((mod (r + 2^(N-1)) 2^N) - 2^(N-1))
+        // Named intermediates keep the expression readable (CQ-5).
         auto halfPow = getHalfPowerOfTwo(intType.getWidth());
         auto fullPow = getPowerOfTwo(intType.getWidth());
-        modExpr = "((mod (" + rawExpr + " + " + halfPow + ") " + fullPow +
-                  ") - " + halfPow + ")";
+        auto shifted = "(" + rawExpr + " + " + halfPow + ")";
+        auto modded = "(mod " + shifted + " " + fullPow + ")";
+        modExpr = "(" + modded + " - " + halfPow + ")";
       } else {
         modExpr = rawExpr;
       }
       nameMap[op->getResult(0)] = modExpr;
-    } else if (mode == "saturate" && intType) {
-      // Saturate: if r < MIN then MIN else if r > MAX then MAX else r
-      auto minStr = getMinStr(intType);
-      auto maxStr = getMaxStr(intType);
-      auto satExpr = "(if " + rawExpr + " < " + minStr + " then " + minStr +
-                     " else if " + rawExpr + " > " + maxStr + " then " +
-                     maxStr + " else " + rawExpr + ")";
-      nameMap[op->getResult(0)] = satExpr;
+    } else if (mode == "saturate") {
+      if (!intType) {
+        // Saturate mode requires type information for clamping bounds.
+        // Fall through to trap mode as a defensive fallback.
+        llvm::errs() << "warning: saturate mode on op without IntType; "
+                        "falling back to trap semantics\n";
+      }
+      if (intType) {
+        // Saturate: if r < MIN then MIN else if r > MAX then MAX else r
+        auto minStr = getMinStr(intType);
+        auto maxStr = getMaxStr(intType);
+        auto satExpr = "(if " + rawExpr + " < " + minStr + " then " + minStr +
+                       " else if " + rawExpr + " > " + maxStr + " then " +
+                       maxStr + " else " + rawExpr + ")";
+        nameMap[op->getResult(0)] = satExpr;
+      } else {
+        // No type info: fall through to trap (raw expression, no assertion)
+        nameMap[op->getResult(0)] = rawExpr;
+      }
     } else {
       // Trap mode (default): assert bounds, keep raw expression
       if (intType) {
@@ -382,6 +404,9 @@ private:
   }
 
   /// Emit a division-like op with divisor-not-zero and overflow assertions.
+  /// Division-by-zero assertion is always emitted (undefined in all modes).
+  /// Overflow assertion (e.g., MIN / -1) respects the overflow mode:
+  /// trap = assert range, wrap = modular reduction, saturate = clamp.
   void emitDivLikeOp(mlir::Operation* op, mlir::Value lhsVal,
                      mlir::Value rhsVal, const std::string& whymlFunc,
                      llvm::raw_string_ostream& out,
@@ -389,17 +414,58 @@ private:
     auto lhs = getExpr(lhsVal, nameMap);
     auto rhs = getExpr(rhsVal, nameMap);
     auto expr = "(" + whymlFunc + " " + lhs + " " + rhs + ")";
+    // Division-by-zero is always undefined, regardless of overflow mode.
     out << "    assert { " << rhs << " <> 0 };\n";
-    // Overflow check: MIN / -1 overflows for signed types in trap mode
     auto intType = getResultIntType(op);
-    if (intType) {
-      emitTrapAssertion(expr, intType, out);
+    auto mode = getOverflowMode(op);
+    if (mode == "wrap") {
+      // Wrap mode: apply modular arithmetic to the result
+      if (intType && !intType.getIsSigned()) {
+        auto modExpr =
+            "(mod " + expr + " " + getPowerOfTwo(intType.getWidth()) + ")";
+        nameMap[op->getResult(0)] = modExpr;
+      } else if (intType) {
+        auto halfPow = getHalfPowerOfTwo(intType.getWidth());
+        auto fullPow = getPowerOfTwo(intType.getWidth());
+        auto modExpr = "((mod (" + expr + " + " + halfPow + ") " + fullPow +
+                       ") - " + halfPow + ")";
+        nameMap[op->getResult(0)] = modExpr;
+      } else {
+        nameMap[op->getResult(0)] = expr;
+      }
+    } else if (mode == "saturate") {
+      // TODO(CR-4): Extract a shared helper for overflow mode dispatch
+      // (applyOverflowMode) to reduce duplication across
+      // emitArithWithOverflowCheck, emitDivLikeOp, and emitCastOp.
+      if (!intType) {
+        // Saturate mode requires type information for clamping bounds.
+        // Fall through to trap mode as a defensive fallback.
+        llvm::errs() << "warning: saturate mode on op without IntType; "
+                        "falling back to trap semantics\n";
+      }
+      if (intType) {
+        // Saturate: clamp to type range
+        auto minStr = getMinStr(intType);
+        auto maxStr = getMaxStr(intType);
+        auto satExpr = "(if " + expr + " < " + minStr + " then " + minStr +
+                       " else if " + expr + " > " + maxStr + " then " + maxStr +
+                       " else " + expr + ")";
+        nameMap[op->getResult(0)] = satExpr;
+      } else {
+        // No type info: fall through to trap (raw expression, no assertion)
+        nameMap[op->getResult(0)] = expr;
+      }
+    } else {
+      // Trap mode (default): assert bounds for overflow (e.g., MIN / -1)
+      if (intType) {
+        emitTrapAssertion(expr, intType, out);
+      }
+      nameMap[op->getResult(0)] = expr;
     }
-    nameMap[op->getResult(0)] = expr;
   }
 
-  /// Emit a CastOp: widening is identity, narrowing/sign-change in trap mode
-  /// asserts the target range.
+  /// Emit a CastOp: widening is identity, narrowing/sign-change respects
+  /// the overflow mode (trap = assert range, wrap = modular, saturate = clamp).
   void emitCastOp(arc::CastOp castOp, llvm::raw_string_ostream& out,
                   llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto inputExpr = getExpr(castOp.getInput(), nameMap);
@@ -407,12 +473,37 @@ private:
     auto dstType = mlir::dyn_cast<arc::IntType>(castOp.getResult().getType());
 
     if (srcType && dstType) {
-      bool isWidening = dstType.getWidth() >= srcType.getWidth() &&
+      // A cast is widening (no assertion needed) only when:
+      // 1. Same signedness and destination strictly wider, OR
+      // 2. Unsigned-to-signed and destination strictly wider (not same width,
+      //    since e.g. u32 max 4294967295 > i32 max 2147483647).
+      bool isWidening = dstType.getWidth() > srcType.getWidth() &&
                         (dstType.getIsSigned() == srcType.getIsSigned() ||
                          (!srcType.getIsSigned() && dstType.getIsSigned()));
       if (!isWidening) {
-        // Narrowing or sign-change in trap mode: assert target range
-        emitTrapAssertion(inputExpr, dstType, out);
+        auto mode = getOverflowMode(castOp);
+        if (mode == "wrap") {
+          // Wrap: apply modular reduction to target type
+          if (!dstType.getIsSigned()) {
+            inputExpr = "(mod " + inputExpr + " " +
+                        getPowerOfTwo(dstType.getWidth()) + ")";
+          } else {
+            auto halfPow = getHalfPowerOfTwo(dstType.getWidth());
+            auto fullPow = getPowerOfTwo(dstType.getWidth());
+            inputExpr = "((mod (" + inputExpr + " + " + halfPow + ") " +
+                        fullPow + ") - " + halfPow + ")";
+          }
+        } else if (mode == "saturate") {
+          // Saturate: clamp to target type range
+          auto minStr = getMinStr(dstType);
+          auto maxStr = getMaxStr(dstType);
+          inputExpr = "(if " + inputExpr + " < " + minStr + " then " + minStr +
+                      " else if " + inputExpr + " > " + maxStr + " then " +
+                      maxStr + " else " + inputExpr + ")";
+        } else {
+          // Trap mode (default): assert target range
+          emitTrapAssertion(inputExpr, dstType, out);
+        }
       }
     }
     // The cast itself is an identity in WhyML (all integers are mathematical)
@@ -425,7 +516,18 @@ private:
       auto attr = constOp.getValue();
       std::string valStr;
       if (auto intAttr = llvm::dyn_cast<mlir::IntegerAttr>(attr)) {
-        valStr = std::to_string(intAttr.getInt());
+        // Use APInt directly to correctly handle unsigned 64-bit values
+        // that exceed INT64_MAX (e.g., UINT64_MAX).
+        llvm::APInt apVal = intAttr.getValue();
+        llvm::SmallString<32> valBuf;
+        // Check if the result type is unsigned to decide formatting.
+        auto resIntType = getResultIntType(constOp);
+        if (resIntType && !resIntType.getIsSigned()) {
+          apVal.toStringUnsigned(valBuf);
+        } else {
+          apVal.toStringSigned(valBuf);
+        }
+        valStr = std::string(valBuf);
       } else if (auto boolAttr = llvm::dyn_cast<mlir::BoolAttr>(attr)) {
         valStr = boolAttr.getValue() ? "true" : "false";
       }

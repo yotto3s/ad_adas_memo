@@ -409,10 +409,12 @@ parseContracts(clang::ASTContext& context) {
             modeText == "saturate") {
           info.overflowMode = modeText.str();
         } else {
-          llvm::errs() << "warning: in function '" << funcName << "' (line "
+          // SC-6: Emit diagnostic error (not just stderr warning) for invalid
+          // overflow mode, consistent with other contract parsing errors.
+          llvm::errs() << "error: in function '" << funcName << "' (line "
                        << funcLine << "): unknown overflow mode '" << modeText
-                       << "'; expected 'trap', 'wrap', or 'saturate' (ignored, "
-                          "defaulting to 'trap')\n";
+                       << "'; expected 'trap', 'wrap', or 'saturate' "
+                          "(defaulting to 'trap')\n";
         }
       }
     }

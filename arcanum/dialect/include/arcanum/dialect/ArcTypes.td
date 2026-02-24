@@ -25,9 +25,11 @@ def Arc_IntType : Arc_Type<"Int", "int"> {
     Parameterized integer type supporting i8/i16/i32/i64 (signed)
     and u8/u16/u32/u64 (unsigned). Arithmetic on signed types
     generates overflow proof obligations in trap mode.
+    Width must be one of {8, 16, 32, 64}.
   }];
   let parameters = (ins "unsigned":$width, "bool":$isSigned);
   let hasCustomAssemblyFormat = 1;
+  let genVerifyDecl = 1;
   let extraClassDeclaration = [{
     llvm::APInt getMinValue() const;
     llvm::APInt getMaxValue() const;

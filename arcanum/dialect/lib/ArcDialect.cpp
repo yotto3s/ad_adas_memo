@@ -81,5 +81,9 @@ void ArcDialect::printType(mlir::Type type,
     printer << "bool";
     return;
   }
+  // CQ-10: llvm_unreachable is acceptable here because the Arc dialect has a
+  // closed type system (IntType, BoolType) and this code path is unreachable
+  // for well-formed IR.  MLIR dialects conventionally use llvm_unreachable
+  // for exhaustive type dispatch.
   llvm_unreachable("unknown Arc type in printType");
 }

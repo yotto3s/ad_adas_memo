@@ -24,6 +24,20 @@ void ArcDialect::registerTypes() {
 }
 
 //===----------------------------------------------------------------------===//
+// IntType construction validation (defense-in-depth for CR-3)
+//===----------------------------------------------------------------------===//
+
+mlir::LogicalResult
+IntType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                unsigned width, bool /*isSigned*/) {
+  if (width != 8 && width != 16 && width != 32 && width != 64) {
+    return emitError() << "unsupported IntType width " << width
+                       << "; expected 8, 16, 32, or 64";
+  }
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // IntType custom assembly format
 //===----------------------------------------------------------------------===//
 
