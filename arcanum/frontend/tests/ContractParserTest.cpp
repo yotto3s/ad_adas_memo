@@ -1,3 +1,5 @@
+#include "TestHelpers.h"
+
 #include "arcanum/frontend/ContractParser.h"
 
 #include "clang/Frontend/FrontendActions.h"
@@ -8,30 +10,226 @@
 namespace arcanum {
 namespace {
 
-std::map<const clang::FunctionDecl*, ContractInfo>
-parseFromSource(const std::string& code,
-                std::unique_ptr<clang::ASTUnit>& astOut) {
-  astOut = clang::tooling::buildASTFromCodeWithArgs(
-      code, {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
-      std::make_shared<clang::PCHContainerOperations>());
-  EXPECT_NE(astOut, nullptr);
-  return parseContracts(astOut->getASTContext());
-}
+using ::arcanum::testing::parseFromSource;
 
-TEST(ContractParserTest, ParsesSimpleRequires) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
+// ---------------------------------------------------------------------------
+// Parameterized: Comparison operators
+// ---------------------------------------------------------------------------
+
+struct ComparisonOpParam {
+  const char* name;
+  const char* opStr;
+  BinaryOpKind expected;
+};
+
+class ComparisonOpTest : public ::testing::TestWithParam<ComparisonOpParam> {};
+
+struct ComparisonOpName {
+  std::string
+  operator()(const ::testing::TestParamInfo<ComparisonOpParam>& info) const {
+    return info.param.name;
+  }
+};
+
+TEST_P(ComparisonOpTest, ParsesComparisonOperator) {
+  auto [name, opStr, expected] = GetParam();
+  std::string code = std::string(R"(
     #include <cstdint>
-    //@ requires: a >= 0
+    //@ requires: a )") +
+                     opStr + R"( 10
     int32_t foo(int32_t a) { return a; }
-  )",
-                                   ast);
+  )";
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(code, ast);
 
-  EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
-  EXPECT_EQ(it->second.preconditions.size(), 1u);
-  EXPECT_EQ(it->second.postconditions.size(), 0u);
+  ASSERT_NE(it, contracts.end());
+  ASSERT_EQ(it->second.preconditions.size(), 1u);
+  auto& expr = it->second.preconditions[0];
+  EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
+  EXPECT_EQ(expr->binaryOp, expected);
+  EXPECT_EQ(expr->left->kind, ContractExprKind::ParamRef);
+  EXPECT_EQ(expr->left->paramName, "a");
+  EXPECT_EQ(expr->right->kind, ContractExprKind::IntLiteral);
+  EXPECT_EQ(expr->right->intValue, 10);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    ContractParser, ComparisonOpTest,
+    ::testing::Values(ComparisonOpParam{"Lt", "<", BinaryOpKind::Lt},
+                      ComparisonOpParam{"Le", "<=", BinaryOpKind::Le},
+                      ComparisonOpParam{"Gt", ">", BinaryOpKind::Gt},
+                      ComparisonOpParam{"Ge", ">=", BinaryOpKind::Ge},
+                      ComparisonOpParam{"Eq", "==", BinaryOpKind::Eq},
+                      ComparisonOpParam{"Ne", "!=", BinaryOpKind::Ne}),
+    ComparisonOpName{});
+
+// ---------------------------------------------------------------------------
+// Parameterized: Arithmetic operators
+// ---------------------------------------------------------------------------
+
+struct ArithmeticOpParam {
+  const char* name;
+  const char* opStr;
+  BinaryOpKind expected;
+};
+
+class ArithmeticOpTest : public ::testing::TestWithParam<ArithmeticOpParam> {};
+
+struct ArithmeticOpName {
+  std::string
+  operator()(const ::testing::TestParamInfo<ArithmeticOpParam>& info) const {
+    return info.param.name;
+  }
+};
+
+TEST_P(ArithmeticOpTest, ParsesArithmeticOperator) {
+  auto [name, opStr, expected] = GetParam();
+  std::string code = std::string(R"(
+    #include <cstdint>
+    //@ ensures: \result == a )") +
+                     opStr + R"( b
+    int32_t foo(int32_t a, int32_t b) { return a + b; }
+  )";
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(code, ast);
+
+  auto it = contracts.begin();
+  ASSERT_NE(it, contracts.end());
+  ASSERT_EQ(it->second.postconditions.size(), 1u);
+  auto& expr = it->second.postconditions[0];
+  EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
+  EXPECT_EQ(expr->binaryOp, BinaryOpKind::Eq);
+  ASSERT_NE(expr->right, nullptr);
+  EXPECT_EQ(expr->right->kind, ContractExprKind::BinaryOp);
+  EXPECT_EQ(expr->right->binaryOp, expected);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ContractParser, ArithmeticOpTest,
+    ::testing::Values(ArithmeticOpParam{"Add", "+", BinaryOpKind::Add},
+                      ArithmeticOpParam{"Sub", "-", BinaryOpKind::Sub},
+                      ArithmeticOpParam{"Mul", "*", BinaryOpKind::Mul},
+                      ArithmeticOpParam{"Div", "/", BinaryOpKind::Div},
+                      ArithmeticOpParam{"Rem", "%", BinaryOpKind::Rem}),
+    ArithmeticOpName{});
+
+// ---------------------------------------------------------------------------
+// Parameterized: Unary operators
+// ---------------------------------------------------------------------------
+
+struct UnaryOpParam {
+  const char* name;
+  const char* contractLine;
+  bool isPostcondition;
+  UnaryOpKind expected;
+};
+
+class UnaryOpTest : public ::testing::TestWithParam<UnaryOpParam> {};
+
+struct UnaryOpName {
+  std::string
+  operator()(const ::testing::TestParamInfo<UnaryOpParam>& info) const {
+    return info.param.name;
+  }
+};
+
+TEST_P(UnaryOpTest, ParsesUnaryOperator) {
+  auto [name, contractLine, isPostcondition, expected] = GetParam();
+  std::string code = std::string(R"(
+    #include <cstdint>
+    //@ )") + contractLine +
+                     R"(
+    int32_t foo(int32_t a) { return -a; }
+  )";
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(code, ast);
+
+  auto it = contracts.begin();
+  ASSERT_NE(it, contracts.end());
+
+  if (isPostcondition) {
+    ASSERT_EQ(it->second.postconditions.size(), 1u);
+    auto& expr = it->second.postconditions[0];
+    ASSERT_NE(expr->right, nullptr);
+    EXPECT_EQ(expr->right->kind, ContractExprKind::UnaryOp);
+    EXPECT_EQ(expr->right->unaryOp, expected);
+  } else {
+    ASSERT_EQ(it->second.preconditions.size(), 1u);
+    auto& expr = it->second.preconditions[0];
+    EXPECT_EQ(expr->kind, ContractExprKind::UnaryOp);
+    EXPECT_EQ(expr->unaryOp, expected);
+    EXPECT_EQ(expr->operand->kind, ContractExprKind::BoolLiteral);
+    EXPECT_EQ(expr->operand->boolValue, false);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ContractParser, UnaryOpTest,
+    ::testing::Values(
+        UnaryOpParam{"Not", "requires: !false", false, UnaryOpKind::Not},
+        UnaryOpParam{"Neg", "ensures: \\result == -a", true, UnaryOpKind::Neg}),
+    UnaryOpName{});
+
+// ---------------------------------------------------------------------------
+// Parameterized: Bool-prefix identifiers (regression: true/false prefix)
+// ---------------------------------------------------------------------------
+
+struct BoolPrefixParam {
+  const char* paramName;
+  const char* contractExpr;
+  BinaryOpKind expectedOp;
+};
+
+class BoolPrefixIdentifierTest
+    : public ::testing::TestWithParam<BoolPrefixParam> {};
+
+struct BoolPrefixName {
+  std::string
+  operator()(const ::testing::TestParamInfo<BoolPrefixParam>& info) const {
+    return info.param.paramName;
+  }
+};
+
+TEST_P(BoolPrefixIdentifierTest, PrefixParsesAsIdentifier) {
+  auto [paramName, contractExpr, expectedOp] = GetParam();
+  std::string code = std::string(R"(
+    #include <cstdint>
+    //@ requires: )") +
+                     contractExpr + "\n    int32_t foo(int32_t " + paramName +
+                     ") { return " + paramName + "; }\n";
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(code, ast);
+
+  ASSERT_EQ(contracts.size(), 1u)
+      << "Contract was not parsed (likely dropped due to parse failure)";
+
+  auto it = contracts.begin();
+  ASSERT_EQ(it->second.preconditions.size(), 1u)
+      << "Precondition was not parsed correctly";
+
+  auto& expr = it->second.preconditions[0];
+  EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
+  EXPECT_EQ(expr->binaryOp, expectedOp);
+
+  ASSERT_NE(expr->left, nullptr);
+  EXPECT_EQ(expr->left->kind, ContractExprKind::ParamRef)
+      << "LHS was parsed as kind=" << static_cast<int>(expr->left->kind)
+      << " instead of ParamRef. Bool prefix was likely matched as a "
+         "boolean literal.";
+  EXPECT_EQ(expr->left->paramName, paramName);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ContractParser, BoolPrefixIdentifierTest,
+    ::testing::Values(
+        BoolPrefixParam{"trueVal", "trueVal >= 0", BinaryOpKind::Ge},
+        BoolPrefixParam{"falsehood", "falsehood == 0", BinaryOpKind::Eq}),
+    BoolPrefixName{});
+
+// ---------------------------------------------------------------------------
+// Individual tests: unique scenarios that don't benefit from parameterization
+// ---------------------------------------------------------------------------
 
 TEST(ContractParserTest, ParsesMultipleRequires) {
   std::unique_ptr<clang::ASTUnit> ast;
@@ -46,20 +244,6 @@ TEST(ContractParserTest, ParsesMultipleRequires) {
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
   EXPECT_EQ(it->second.preconditions.size(), 2u);
-}
-
-TEST(ContractParserTest, ParsesEnsuresWithResult) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ ensures: \result >= 0
-    int32_t foo(int32_t a) { return a; }
-  )",
-                                   ast);
-
-  EXPECT_EQ(contracts.size(), 1u);
-  auto it = contracts.begin();
-  EXPECT_EQ(it->second.postconditions.size(), 1u);
 }
 
 TEST(ContractParserTest, ParsesRequiresAndEnsures) {
@@ -88,26 +272,6 @@ TEST(ContractParserTest, NoContractsReturnsEmptyMap) {
                                    ast);
 
   EXPECT_TRUE(contracts.empty());
-}
-
-TEST(ContractParserTest, ParsesBinaryComparisonExpr) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ requires: a >= 0
-    int32_t foo(int32_t a) { return a; }
-  )",
-                                   ast);
-
-  auto it = contracts.begin();
-  ASSERT_EQ(it->second.preconditions.size(), 1u);
-  auto& expr = it->second.preconditions[0];
-  EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
-  EXPECT_EQ(expr->binaryOp, BinaryOpKind::Ge);
-  EXPECT_EQ(expr->left->kind, ContractExprKind::ParamRef);
-  EXPECT_EQ(expr->left->paramName, "a");
-  EXPECT_EQ(expr->right->kind, ContractExprKind::IntLiteral);
-  EXPECT_EQ(expr->right->intValue, 0);
 }
 
 TEST(ContractParserTest, ParsesAndExpression) {
@@ -142,109 +306,6 @@ TEST(ContractParserTest, ParsesResultRef) {
   EXPECT_EQ(expr->left->kind, ContractExprKind::ResultRef);
 }
 
-// --- TC-8: Comprehensive contract expression parser tests ---
-
-TEST(ContractParserTest, ParsesAllComparisonOperators) {
-  // Test <, <=, >, >=, ==, !=
-  std::unique_ptr<clang::ASTUnit> ast;
-
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ requires: a < 10
-    //@ requires: a <= 20
-    //@ requires: a > 0
-    //@ requires: a >= 1
-    //@ requires: a == 5
-    //@ requires: a != 3
-    int32_t foo(int32_t a) { return a; }
-  )",
-                                   ast);
-
-  auto it = contracts.begin();
-  ASSERT_EQ(it->second.preconditions.size(), 6u);
-  EXPECT_EQ(it->second.preconditions[0]->binaryOp, BinaryOpKind::Lt);
-  EXPECT_EQ(it->second.preconditions[1]->binaryOp, BinaryOpKind::Le);
-  EXPECT_EQ(it->second.preconditions[2]->binaryOp, BinaryOpKind::Gt);
-  EXPECT_EQ(it->second.preconditions[3]->binaryOp, BinaryOpKind::Ge);
-  EXPECT_EQ(it->second.preconditions[4]->binaryOp, BinaryOpKind::Eq);
-  EXPECT_EQ(it->second.preconditions[5]->binaryOp, BinaryOpKind::Ne);
-}
-
-TEST(ContractParserTest, ParsesArithmeticOperators) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ ensures: \result == a + b
-    int32_t foo(int32_t a, int32_t b) { return a + b; }
-  )",
-                                   ast);
-
-  auto it = contracts.begin();
-  ASSERT_EQ(it->second.postconditions.size(), 1u);
-  auto& expr = it->second.postconditions[0];
-  EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
-  EXPECT_EQ(expr->binaryOp, BinaryOpKind::Eq);
-  // rhs should be a + b
-  EXPECT_EQ(expr->right->kind, ContractExprKind::BinaryOp);
-  EXPECT_EQ(expr->right->binaryOp, BinaryOpKind::Add);
-}
-
-TEST(ContractParserTest, ParsesSubtraction) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ ensures: \result == a - b
-    int32_t foo(int32_t a, int32_t b) { return a - b; }
-  )",
-                                   ast);
-
-  auto it = contracts.begin();
-  auto& expr = it->second.postconditions[0];
-  EXPECT_EQ(expr->right->binaryOp, BinaryOpKind::Sub);
-}
-
-TEST(ContractParserTest, ParsesMultiplication) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ ensures: \result == a * b
-    int32_t foo(int32_t a, int32_t b) { return a * b; }
-  )",
-                                   ast);
-
-  auto it = contracts.begin();
-  auto& expr = it->second.postconditions[0];
-  EXPECT_EQ(expr->right->binaryOp, BinaryOpKind::Mul);
-}
-
-TEST(ContractParserTest, ParsesDivision) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ ensures: \result == a / b
-    int32_t foo(int32_t a, int32_t b) { return a / b; }
-  )",
-                                   ast);
-
-  auto it = contracts.begin();
-  auto& expr = it->second.postconditions[0];
-  EXPECT_EQ(expr->right->binaryOp, BinaryOpKind::Div);
-}
-
-TEST(ContractParserTest, ParsesRemainder) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ ensures: \result == a % b
-    int32_t foo(int32_t a, int32_t b) { return a % b; }
-  )",
-                                   ast);
-
-  auto it = contracts.begin();
-  auto& expr = it->second.postconditions[0];
-  EXPECT_EQ(expr->right->binaryOp, BinaryOpKind::Rem);
-}
-
 TEST(ContractParserTest, ParsesOrExpression) {
   std::unique_ptr<clang::ASTUnit> ast;
   auto contracts = parseFromSource(R"(
@@ -258,40 +319,6 @@ TEST(ContractParserTest, ParsesOrExpression) {
   ASSERT_EQ(it->second.preconditions.size(), 1u);
   EXPECT_EQ(it->second.preconditions[0]->kind, ContractExprKind::BinaryOp);
   EXPECT_EQ(it->second.preconditions[0]->binaryOp, BinaryOpKind::Or);
-}
-
-TEST(ContractParserTest, ParsesNotUnaryOp) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ requires: !false
-    int32_t foo(int32_t a) { return a; }
-  )",
-                                   ast);
-
-  auto it = contracts.begin();
-  ASSERT_EQ(it->second.preconditions.size(), 1u);
-  auto& expr = it->second.preconditions[0];
-  EXPECT_EQ(expr->kind, ContractExprKind::UnaryOp);
-  EXPECT_EQ(expr->unaryOp, UnaryOpKind::Not);
-  EXPECT_EQ(expr->operand->kind, ContractExprKind::BoolLiteral);
-  EXPECT_EQ(expr->operand->boolValue, false);
-}
-
-TEST(ContractParserTest, ParsesNegationUnaryOp) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ ensures: \result == -a
-    int32_t foo(int32_t a) { return -a; }
-  )",
-                                   ast);
-
-  auto it = contracts.begin();
-  ASSERT_EQ(it->second.postconditions.size(), 1u);
-  auto& expr = it->second.postconditions[0];
-  EXPECT_EQ(expr->right->kind, ContractExprKind::UnaryOp);
-  EXPECT_EQ(expr->right->unaryOp, UnaryOpKind::Neg);
 }
 
 TEST(ContractParserTest, ParsesBoolLiterals) {
@@ -328,13 +355,11 @@ TEST(ContractParserTest, ParsesParenthesizedExpression) {
   auto& expr = it->second.preconditions[0];
   EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
   EXPECT_EQ(expr->binaryOp, BinaryOpKind::Ge);
-  // Left side should be (a + b)
   EXPECT_EQ(expr->left->kind, ContractExprKind::BinaryOp);
   EXPECT_EQ(expr->left->binaryOp, BinaryOpKind::Add);
 }
 
 TEST(ContractParserTest, ParsesOperatorPrecedence) {
-  // a + b * c should parse as a + (b * c) due to precedence
   std::unique_ptr<clang::ASTUnit> ast;
   auto contracts = parseFromSource(R"(
     #include <cstdint>
@@ -346,9 +371,7 @@ TEST(ContractParserTest, ParsesOperatorPrecedence) {
   auto it = contracts.begin();
   ASSERT_EQ(it->second.postconditions.size(), 1u);
   auto& expr = it->second.postconditions[0];
-  // == at top level
   EXPECT_EQ(expr->binaryOp, BinaryOpKind::Eq);
-  // right side: a + (b * c)
   auto& addExpr = expr->right;
   EXPECT_EQ(addExpr->binaryOp, BinaryOpKind::Add);
   EXPECT_EQ(addExpr->left->kind, ContractExprKind::ParamRef);
@@ -371,7 +394,6 @@ TEST(ContractParserTest, ParsesIntegerLiteral) {
   EXPECT_EQ(expr->right->intValue, 42);
 }
 
-// TC-9: Malformed expression tests
 TEST(ContractParserTest, MalformedExpressionReturnsNull) {
   std::unique_ptr<clang::ASTUnit> ast;
   auto contracts = parseFromSource(R"(
@@ -381,9 +403,6 @@ TEST(ContractParserTest, MalformedExpressionReturnsNull) {
   )",
                                    ast);
 
-  // Malformed expression should result in no preconditions being added
-  // (because parse returns nullptr which is filtered by the `if (auto expr)`
-  // check)
   auto it = contracts.begin();
   if (it != contracts.end()) {
     EXPECT_TRUE(it->second.preconditions.empty());
@@ -399,17 +418,12 @@ TEST(ContractParserTest, EmptyExpressionReturnsNull) {
   )",
                                    ast);
 
-  // Empty expression should not add any preconditions
   if (!contracts.empty()) {
     auto it = contracts.begin();
     EXPECT_TRUE(it->second.preconditions.empty());
   }
 }
 
-// TC-18: Chained comparison `0 <= a <= 1000` parses as `(0 <= a) <= 1000`
-// because the parser treats comparisons as left-to-right, non-associative
-// with a single parse of the comparison operator.  This documents the
-// current behavior; true chained comparisons would require special syntax.
 TEST(ContractParserTest, ChainedComparisonParsesLeftToRight) {
   std::unique_ptr<clang::ASTUnit> ast;
   auto contracts = parseFromSource(R"(
@@ -419,20 +433,74 @@ TEST(ContractParserTest, ChainedComparisonParsesLeftToRight) {
   )",
                                    ast);
 
-  // The chained expression should parse as: (0 <= a) <= 1000
-  // The first <= produces a BinaryOp(Le, 0, a).  Then the parser sees
-  // another <= and treats the whole (0 <= a) as the LHS of a new Le.
-  // However, our parser only handles ONE comparison per parseComparison()
-  // call, so "0 <= a" is consumed, then "<= 1000" is left unconsumed
-  // and the expression terminates with just "0 <= a".
-  //
-  // Verify: we get a contract (the first comparison parses successfully).
   auto it = contracts.begin();
   ASSERT_NE(it, contracts.end());
   ASSERT_EQ(it->second.preconditions.size(), 1u);
   auto& expr = it->second.preconditions[0];
   EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
   EXPECT_EQ(expr->binaryOp, BinaryOpKind::Le);
+}
+
+// ---------------------------------------------------------------------------
+// Coverage gap G2: Negative integer literals in contracts
+// ---------------------------------------------------------------------------
+
+TEST(ContractParserTest, ParsesNegativeIntegerLiteral) {
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ requires: a >= -5
+    int32_t foo(int32_t a) { return a; }
+  )",
+                                   ast);
+
+  auto it = contracts.begin();
+  ASSERT_NE(it, contracts.end());
+  ASSERT_EQ(it->second.preconditions.size(), 1u);
+  auto& expr = it->second.preconditions[0];
+  EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
+  EXPECT_EQ(expr->binaryOp, BinaryOpKind::Ge);
+  // -5 parses as UnaryOp(Neg, IntLiteral(5))
+  ASSERT_NE(expr->right, nullptr);
+  EXPECT_EQ(expr->right->kind, ContractExprKind::UnaryOp);
+  EXPECT_EQ(expr->right->unaryOp, UnaryOpKind::Neg);
+  ASSERT_NE(expr->right->operand, nullptr);
+  EXPECT_EQ(expr->right->operand->kind, ContractExprKind::IntLiteral);
+  EXPECT_EQ(expr->right->operand->intValue, 5);
+}
+
+// ---------------------------------------------------------------------------
+// Coverage gap G3: Multiple functions with contracts in same TU
+// ---------------------------------------------------------------------------
+
+TEST(ContractParserTest, ParsesMultipleFunctionsWithContracts) {
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ requires: a >= 0
+    int32_t foo(int32_t a) { return a; }
+
+    //@ ensures: \result >= 0
+    int32_t bar(int32_t b) { return b; }
+  )",
+                                   ast);
+
+  EXPECT_EQ(contracts.size(), 2u);
+
+  bool foundRequires = false;
+  bool foundEnsures = false;
+  for (const auto& [decl, info] : contracts) {
+    if (!info.preconditions.empty()) {
+      foundRequires = true;
+      EXPECT_EQ(info.preconditions.size(), 1u);
+    }
+    if (!info.postconditions.empty()) {
+      foundEnsures = true;
+      EXPECT_EQ(info.postconditions.size(), 1u);
+    }
+  }
+  EXPECT_TRUE(foundRequires);
+  EXPECT_TRUE(foundEnsures);
 }
 
 } // namespace
