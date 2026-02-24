@@ -19,18 +19,6 @@ target_link_libraries(LoweringTest PRIVATE
 )
 gtest_discover_tests(LoweringTest)
 
-# --- LoweringRegressionTest ---
-add_executable(LoweringRegressionTest LoweringRegressionTest.cpp)
-target_link_libraries(LoweringRegressionTest PRIVATE
-  ArcanumLowering
-  ArcanumFrontend
-  ArcDialect
-  gtest_main
-  clangTooling
-  MLIRIR
-)
-gtest_discover_tests(LoweringRegressionTest)
-
 # --- PassesTest ---
 add_executable(PassesTest PassesTest.cpp)
 target_link_libraries(PassesTest PRIVATE

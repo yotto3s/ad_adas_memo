@@ -10,6 +10,10 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
+#include <string>
+#include <tuple>
+
 namespace arcanum {
 namespace {
 
@@ -20,6 +24,10 @@ protected:
   void SetUp() override { DiagnosticTracker::reset(); }
   void TearDown() override { DiagnosticTracker::reset(); }
 };
+
+// ---------------------------------------------------------------------------
+// Individual tests for unique lowering scenarios
+// ---------------------------------------------------------------------------
 
 TEST_F(LoweringTestFixture, LowersSimpleAddFunction) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
@@ -42,7 +50,6 @@ TEST_F(LoweringTestFixture, LowersSimpleAddFunction) {
   auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
   ASSERT_TRUE(module);
 
-  // Check that we have at least one arc.func operation
   bool foundFunc = false;
   module->walk([&](arc::FuncOp funcOp) {
     EXPECT_EQ(funcOp.getSymName(), "safe_add");
@@ -99,14 +106,11 @@ TEST_F(LoweringTestFixture, FuncOpHasContractAttributesAndBody) {
 
   module->walk([&](arc::FuncOp funcOp) {
     EXPECT_EQ(funcOp.getSymName(), "identity");
-    // Check contract attributes are set
     EXPECT_TRUE(funcOp.getRequiresAttr().has_value());
     EXPECT_TRUE(funcOp.getEnsuresAttr().has_value());
-    // Check the function has a body with at least a return
     EXPECT_FALSE(funcOp.getBody().empty());
     auto& block = funcOp.getBody().front();
-    EXPECT_EQ(block.getNumArguments(), 1u); // one parameter
-    // Should end with a return op
+    EXPECT_EQ(block.getNumArguments(), 1u);
     bool hasReturn = false;
     for (auto& op : block.getOperations()) {
       if (llvm::isa<arc::ReturnOp>(&op)) {
@@ -115,51 +119,6 @@ TEST_F(LoweringTestFixture, FuncOpHasContractAttributesAndBody) {
     }
     EXPECT_TRUE(hasReturn);
   });
-}
-
-// TC-13: Lowering various expression types
-TEST_F(LoweringTestFixture, LowersSubtraction) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      R"(
-    #include <cstdint>
-    int32_t sub(int32_t a, int32_t b) {
-      return a - b;
-    }
-  )",
-      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
-      std::make_shared<clang::PCHContainerOperations>());
-  ASSERT_NE(ast, nullptr);
-
-  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
-  mlir::MLIRContext mlirCtx;
-  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
-  ASSERT_TRUE(module);
-
-  bool foundSub = false;
-  module->walk([&](arc::SubOp) { foundSub = true; });
-  EXPECT_TRUE(foundSub);
-}
-
-TEST_F(LoweringTestFixture, LowersComparison) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      R"(
-    #include <cstdint>
-    bool isPositive(int32_t a) {
-      return a > 0;
-    }
-  )",
-      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
-      std::make_shared<clang::PCHContainerOperations>());
-  ASSERT_NE(ast, nullptr);
-
-  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
-  mlir::MLIRContext mlirCtx;
-  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
-  ASSERT_TRUE(module);
-
-  bool foundCmp = false;
-  module->walk([&](arc::CmpOp) { foundCmp = true; });
-  EXPECT_TRUE(foundCmp);
 }
 
 TEST_F(LoweringTestFixture, LowersVariableDeclaration) {
@@ -206,11 +165,220 @@ TEST_F(LoweringTestFixture, LowersFunctionWithoutContracts) {
   ASSERT_TRUE(module);
 
   module->walk([&](arc::FuncOp funcOp) {
-    // No contract attributes should be set
     EXPECT_FALSE(funcOp.getRequiresAttr().has_value());
     EXPECT_FALSE(funcOp.getEnsuresAttr().has_value());
   });
 }
+
+/// Merged from LoweringRegressionTest.cpp:
+/// [F1] Null pointer dereference when lowering void function with explicit
+/// return; statement.
+TEST_F(LoweringTestFixture, VoidReturnDoesNotCrash) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    void doNothing() { return; }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  EXPECT_TRUE(module);
+}
+
+// B6: Assignment lowering test
+TEST_F(LoweringTestFixture, LowersAssignment) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    int32_t withAssign(int32_t a) {
+      int32_t x = a;
+      x = a + 1;
+      return x;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundAssign = false;
+  module->walk([&](arc::AssignOp) { foundAssign = true; });
+  EXPECT_TRUE(foundAssign);
+}
+
+// ---------------------------------------------------------------------------
+// TEST_P: Arithmetic lowering (Sub, Mul, Div, Rem)
+// ---------------------------------------------------------------------------
+
+using ArithLoweringParam = std::tuple<std::string, std::string, std::string>;
+
+class ArithmeticLoweringTest
+    : public LoweringTestFixture,
+      public ::testing::WithParamInterface<ArithLoweringParam> {};
+
+TEST_P(ArithmeticLoweringTest, LowersArithmeticOp) {
+  auto [name, cppOperator, expectedOpName] = GetParam();
+
+  std::string code = R"(
+    #include <cstdint>
+    int32_t arith(int32_t a, int32_t b) {
+      return a )" + cppOperator +
+                      R"( b;
+    }
+  )";
+
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      code, {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundOp = false;
+  module->walk([&](mlir::Operation* op) {
+    if (op->getName().getStringRef() == expectedOpName) {
+      foundOp = true;
+    }
+  });
+  EXPECT_TRUE(foundOp) << "Expected to find " << expectedOpName;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ArithOps, ArithmeticLoweringTest,
+    ::testing::Values(ArithLoweringParam{"Sub", "- ", "arc.sub"},
+                      ArithLoweringParam{"Mul", "* ", "arc.mul"},
+                      ArithLoweringParam{"Div", "/ ", "arc.div"},
+                      ArithLoweringParam{"Rem", "% ", "arc.rem"}),
+    [](const ::testing::TestParamInfo<ArithLoweringParam>& info) {
+      return std::get<0>(info.param);
+    });
+
+// ---------------------------------------------------------------------------
+// TEST_P: Comparison predicate lowering (gt, le, ge, eq, ne)
+// ---------------------------------------------------------------------------
+
+using CmpLoweringParam = std::tuple<std::string, std::string, std::string>;
+
+class ComparisonLoweringTest
+    : public LoweringTestFixture,
+      public ::testing::WithParamInterface<CmpLoweringParam> {};
+
+TEST_P(ComparisonLoweringTest, LowersComparisonPredicate) {
+  auto [name, cppOperator, expectedPredicate] = GetParam();
+
+  std::string code = R"(
+    #include <cstdint>
+    bool cmp(int32_t a) {
+      return a )" + cppOperator +
+                      R"( 0;
+    }
+  )";
+
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      code, {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundPredicate = false;
+  module->walk([&](arc::CmpOp cmpOp) {
+    if (cmpOp.getPredicate() == expectedPredicate) {
+      foundPredicate = true;
+    }
+  });
+  EXPECT_TRUE(foundPredicate)
+      << "Expected CmpOp with predicate '" << expectedPredicate << "'";
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CmpPredicates, ComparisonLoweringTest,
+    ::testing::Values(CmpLoweringParam{"Gt", "> ", "gt"},
+                      CmpLoweringParam{"Le", "<= ", "le"},
+                      CmpLoweringParam{"Ge", ">= ", "ge"},
+                      CmpLoweringParam{"Eq", "== ", "eq"},
+                      CmpLoweringParam{"Ne", "!= ", "ne"}),
+    [](const ::testing::TestParamInfo<CmpLoweringParam>& info) {
+      return std::get<0>(info.param);
+    });
+
+// ---------------------------------------------------------------------------
+// TEST_P: Logical operator lowering (And, Or, Not)
+// ---------------------------------------------------------------------------
+
+using LogicalLoweringParam = std::tuple<std::string, std::string, std::string>;
+
+class LogicalLoweringTest
+    : public LoweringTestFixture,
+      public ::testing::WithParamInterface<LogicalLoweringParam> {};
+
+TEST_P(LogicalLoweringTest, LowersLogicalOp) {
+  auto [name, code, expectedOpName] = GetParam();
+
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      code, {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundOp = false;
+  module->walk([&](mlir::Operation* op) {
+    if (op->getName().getStringRef() == expectedOpName) {
+      foundOp = true;
+    }
+  });
+  EXPECT_TRUE(foundOp) << "Expected to find " << expectedOpName;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    LogicalOps, LogicalLoweringTest,
+    ::testing::Values(
+        LogicalLoweringParam{
+            "And",
+            R"(
+    #include <cstdint>
+    bool logicalAnd(int32_t a, int32_t b) {
+      return a > 0 && b > 0;
+    }
+  )",
+            "arc.and"},
+        LogicalLoweringParam{
+            "Or",
+            R"(
+    #include <cstdint>
+    bool logicalOr(int32_t a, int32_t b) {
+      return a > 0 || b > 0;
+    }
+  )",
+            "arc.or"},
+        LogicalLoweringParam{"Not",
+                             R"(
+    bool logicalNot(bool a) {
+      return !a;
+    }
+  )",
+                             "arc.not"}),
+    [](const ::testing::TestParamInfo<LogicalLoweringParam>& info) {
+      return std::get<0>(info.param);
+    });
 
 } // namespace
 } // namespace arcanum
