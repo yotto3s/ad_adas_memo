@@ -5,59 +5,36 @@
 namespace arcanum {
 namespace {
 
-// --- Parameterized: Parse Status Tests ---
-// Consolidated from ParsesValidObligation, ParsesTimeoutObligation,
-// ParsesUnknownObligation.
-
-struct ParseStatusParam {
-  std::string name;
-  std::string output;
+struct SingleGoalCase {
+  const char* label;
+  const char* goalLine;
+  const char* expectedName;
   ObligationStatus expectedStatus;
+  int64_t expectedDurationMs;
 };
 
-class ParseStatusTest : public ::testing::TestWithParam<ParseStatusParam> {};
-
-TEST_P(ParseStatusTest, ParsesStatus) {
-  const auto& param = GetParam();
-  auto results = parseWhy3Output(param.output);
-  ASSERT_GE(results.size(), 1u);
-  EXPECT_EQ(results[0].status, param.expectedStatus);
-}
-
-INSTANTIATE_TEST_SUITE_P(
-    Why3Runner, ParseStatusTest,
-    ::testing::Values(ParseStatusParam{"Valid",
-                                       R"(
-File "test.mlw", line 5, characters 10-30:
-    Goal safe_add'vc. Valid (0.01s, 0 steps).
-)",
-                                       ObligationStatus::Valid},
-                      ParseStatusParam{"Timeout",
-                                       R"(
-File "test.mlw", line 5, characters 10-30:
-    Goal safe_add'vc. Timeout.
-)",
-                                       ObligationStatus::Timeout},
-                      ParseStatusParam{"Unknown",
-                                       R"(
-File "test.mlw", line 5, characters 10-30:
-    Goal safe_add'vc. Unknown ("unknown").
-)",
-                                       ObligationStatus::Unknown}),
-    [](const ::testing::TestParamInfo<ParseStatusParam>& info) {
-      return info.param.name;
-    });
-
-// TC-20/TC-21: Additional assertions for Valid: name and duration
-TEST(Why3RunnerTest, ParsesValidObligationNameAndDuration) {
-  std::string output = R"(
-File "test.mlw", line 5, characters 10-30:
-    Goal safe_add'vc. Valid (0.01s, 0 steps).
-)";
-  auto results = parseWhy3Output(output);
-  ASSERT_GE(results.size(), 1u);
-  EXPECT_EQ(results[0].name, "safe_add'vc");
-  EXPECT_EQ(results[0].duration.count(), 10);
+// TC-20/TC-21: Consolidated single-goal parsing tests covering
+// Valid (with name + duration), Timeout, and Unknown statuses.
+TEST(Why3RunnerTest, ParsesSingleGoalStatuses) {
+  const SingleGoalCase cases[] = {
+      {"Valid", "Goal safe_add'vc. Valid (0.01s, 0 steps).", "safe_add'vc",
+       ObligationStatus::Valid, 10},
+      {"Timeout", "Goal safe_add'vc. Timeout.", "safe_add'vc",
+       ObligationStatus::Timeout, 0},
+      {"Unknown", R"(Goal safe_add'vc. Unknown ("unknown").)", "safe_add'vc",
+       ObligationStatus::Unknown, 0},
+  };
+  for (const auto& tc : cases) {
+    SCOPED_TRACE(tc.label);
+    std::string output = std::string("File \"test.mlw\", line 5, "
+                                     "characters 10-30:\n    ") +
+                         tc.goalLine + "\n";
+    auto results = parseWhy3Output(output);
+    ASSERT_GE(results.size(), 1u);
+    EXPECT_EQ(results[0].name, tc.expectedName);
+    EXPECT_EQ(results[0].status, tc.expectedStatus);
+    EXPECT_EQ(results[0].duration.count(), tc.expectedDurationMs);
+  }
 }
 
 TEST(Why3RunnerTest, ParsesMultipleObligations) {
