@@ -28,112 +28,55 @@ protected:
   std::unique_ptr<mlir::OpBuilder> builder_;
 };
 
-// --- IntType creation tests for all 8 variants ---
+// --- IntType creation tests for all 8 variants (parametrized) ---
 
-TEST_F(ArcDialectTest, IntTypeI8Creation) {
-  auto type = arc::IntType::get(&context_, 8, true);
-  EXPECT_TRUE(type);
-  EXPECT_EQ(type.getWidth(), 8u);
-  EXPECT_TRUE(type.getIsSigned());
+TEST_F(ArcDialectTest, IntTypeCreationAllVariants) {
+  struct TypeSpec {
+    unsigned width;
+    bool isSigned;
+  };
+  constexpr TypeSpec specs[] = {
+      {8, true},  {16, true},  {32, true},  {64, true},
+      {8, false}, {16, false}, {32, false}, {64, false},
+  };
+
+  for (const auto& spec : specs) {
+    SCOPED_TRACE(std::string(spec.isSigned ? "i" : "u") +
+                 std::to_string(spec.width));
+    auto type = arc::IntType::get(&context_, spec.width, spec.isSigned);
+    EXPECT_TRUE(type);
+    EXPECT_EQ(type.getWidth(), spec.width);
+    EXPECT_EQ(type.getIsSigned(), spec.isSigned);
+  }
 }
 
-TEST_F(ArcDialectTest, IntTypeI16Creation) {
-  auto type = arc::IntType::get(&context_, 16, true);
-  EXPECT_TRUE(type);
-  EXPECT_EQ(type.getWidth(), 16u);
-  EXPECT_TRUE(type.getIsSigned());
-}
+// --- Min/Max value bounds tests (parametrized) ---
 
-TEST_F(ArcDialectTest, IntTypeI32Creation) {
-  auto type = arc::IntType::get(&context_, 32, true);
-  EXPECT_TRUE(type);
-  EXPECT_EQ(type.getWidth(), 32u);
-  EXPECT_TRUE(type.getIsSigned());
-}
+TEST_F(ArcDialectTest, IntTypeBoundsAllVariants) {
+  struct TypeSpec {
+    unsigned width;
+    bool isSigned;
+  };
+  constexpr TypeSpec specs[] = {
+      {8, true},  {16, true},  {32, true},  {64, true},
+      {8, false}, {16, false}, {32, false}, {64, false},
+  };
 
-TEST_F(ArcDialectTest, IntTypeI64Creation) {
-  auto type = arc::IntType::get(&context_, 64, true);
-  EXPECT_TRUE(type);
-  EXPECT_EQ(type.getWidth(), 64u);
-  EXPECT_TRUE(type.getIsSigned());
-}
+  for (const auto& spec : specs) {
+    SCOPED_TRACE(std::string(spec.isSigned ? "i" : "u") +
+                 std::to_string(spec.width));
+    auto type = arc::IntType::get(&context_, spec.width, spec.isSigned);
 
-TEST_F(ArcDialectTest, IntTypeU8Creation) {
-  auto type = arc::IntType::get(&context_, 8, false);
-  EXPECT_TRUE(type);
-  EXPECT_EQ(type.getWidth(), 8u);
-  EXPECT_FALSE(type.getIsSigned());
-}
+    llvm::APInt expectedMin = spec.isSigned
+                                  ? llvm::APInt::getSignedMinValue(spec.width)
+                                  : llvm::APInt(spec.width, 0);
+    llvm::APInt expectedMax = spec.isSigned
+                                  ? llvm::APInt::getSignedMaxValue(spec.width)
+                                  : llvm::APInt::getMaxValue(spec.width);
 
-TEST_F(ArcDialectTest, IntTypeU16Creation) {
-  auto type = arc::IntType::get(&context_, 16, false);
-  EXPECT_TRUE(type);
-  EXPECT_EQ(type.getWidth(), 16u);
-  EXPECT_FALSE(type.getIsSigned());
-}
-
-TEST_F(ArcDialectTest, IntTypeU32Creation) {
-  auto type = arc::IntType::get(&context_, 32, false);
-  EXPECT_TRUE(type);
-  EXPECT_EQ(type.getWidth(), 32u);
-  EXPECT_FALSE(type.getIsSigned());
-}
-
-TEST_F(ArcDialectTest, IntTypeU64Creation) {
-  auto type = arc::IntType::get(&context_, 64, false);
-  EXPECT_TRUE(type);
-  EXPECT_EQ(type.getWidth(), 64u);
-  EXPECT_FALSE(type.getIsSigned());
-}
-
-// --- Min/Max value bounds tests ---
-
-TEST_F(ArcDialectTest, IntTypeI8Bounds) {
-  auto type = arc::IntType::get(&context_, 8, true);
-  EXPECT_EQ(type.getMinValue(), llvm::APInt(8, -128, true));
-  EXPECT_EQ(type.getMaxValue(), llvm::APInt(8, 127, true));
-}
-
-TEST_F(ArcDialectTest, IntTypeI16Bounds) {
-  auto type = arc::IntType::get(&context_, 16, true);
-  EXPECT_EQ(type.getMinValue(), llvm::APInt(16, -32768, true));
-  EXPECT_EQ(type.getMaxValue(), llvm::APInt(16, 32767, true));
-}
-
-TEST_F(ArcDialectTest, IntTypeI32Bounds) {
-  auto type = arc::IntType::get(&context_, 32, true);
-  EXPECT_EQ(type.getMinValue(), llvm::APInt(32, -2147483648LL, true));
-  EXPECT_EQ(type.getMaxValue(), llvm::APInt(32, 2147483647, true));
-}
-
-TEST_F(ArcDialectTest, IntTypeI64Bounds) {
-  auto type = arc::IntType::get(&context_, 64, true);
-  EXPECT_EQ(type.getMinValue(), llvm::APInt::getSignedMinValue(64));
-  EXPECT_EQ(type.getMaxValue(), llvm::APInt::getSignedMaxValue(64));
-}
-
-TEST_F(ArcDialectTest, IntTypeU8Bounds) {
-  auto type = arc::IntType::get(&context_, 8, false);
-  EXPECT_EQ(type.getMinValue(), llvm::APInt(8, 0));
-  EXPECT_EQ(type.getMaxValue(), llvm::APInt(8, 255));
-}
-
-TEST_F(ArcDialectTest, IntTypeU16Bounds) {
-  auto type = arc::IntType::get(&context_, 16, false);
-  EXPECT_EQ(type.getMinValue(), llvm::APInt(16, 0));
-  EXPECT_EQ(type.getMaxValue(), llvm::APInt(16, 65535));
-}
-
-TEST_F(ArcDialectTest, IntTypeU32Bounds) {
-  auto type = arc::IntType::get(&context_, 32, false);
-  EXPECT_EQ(type.getMinValue(), llvm::APInt(32, 0));
-  EXPECT_EQ(type.getMaxValue(), llvm::APInt::getMaxValue(32));
-}
-
-TEST_F(ArcDialectTest, IntTypeU64Bounds) {
-  auto type = arc::IntType::get(&context_, 64, false);
-  EXPECT_EQ(type.getMinValue(), llvm::APInt(64, 0));
-  EXPECT_EQ(type.getMaxValue(), llvm::APInt::getMaxValue(64));
+    EXPECT_EQ(type.getMinValue(), expectedMin);
+    EXPECT_EQ(type.getMaxValue(), expectedMax);
+  }
 }
 
 // --- Backward compatibility: IntType(32, true) works as old I32Type ---
@@ -166,85 +109,54 @@ TEST_F(ArcDialectTest, ConstantOpCreation) {
   module->destroy();
 }
 
-TEST_F(ArcDialectTest, AddOpCreation) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
+// TC-11: Binary op creation tests (parametrized over all 5 arithmetic ops)
+TEST_F(ArcDialectTest, BinaryArithOpCreationAllTypes) {
+  auto testBinaryOp = [&](auto createFn, const char* name) {
+    SCOPED_TRACE(name);
+    auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+    builder_->setInsertionPointToEnd(module.getBody());
 
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto lhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(1));
-  auto rhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(2));
-  auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), i32Type,
+    auto i32Type = arc::IntType::get(&context_, 32, true);
+    auto lhs = builder_->create<arc::ConstantOp>(
+        builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(10));
+    auto rhs = builder_->create<arc::ConstantOp>(
+        builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(3));
+    auto op = createFn(i32Type, lhs, rhs);
+
+    EXPECT_TRUE(op);
+    module->destroy();
+  };
+
+  testBinaryOp(
+      [&](mlir::Type type, mlir::Value lhs, mlir::Value rhs) {
+        return builder_->create<arc::AddOp>(builder_->getUnknownLoc(), type,
                                             lhs, rhs);
-
-  EXPECT_TRUE(addOp);
-  module->destroy();
-}
-
-// TC-11: Tests for additional ops
-TEST_F(ArcDialectTest, SubOpCreation) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
-
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto lhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(5));
-  auto rhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(3));
-  auto subOp = builder_->create<arc::SubOp>(builder_->getUnknownLoc(), i32Type,
+      },
+      "AddOp");
+  testBinaryOp(
+      [&](mlir::Type type, mlir::Value lhs, mlir::Value rhs) {
+        return builder_->create<arc::SubOp>(builder_->getUnknownLoc(), type,
                                             lhs, rhs);
-
-  EXPECT_TRUE(subOp);
-  module->destroy();
-}
-
-TEST_F(ArcDialectTest, MulOpCreation) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
-
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto lhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(4));
-  auto rhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(7));
-  auto mulOp = builder_->create<arc::MulOp>(builder_->getUnknownLoc(), i32Type,
+      },
+      "SubOp");
+  testBinaryOp(
+      [&](mlir::Type type, mlir::Value lhs, mlir::Value rhs) {
+        return builder_->create<arc::MulOp>(builder_->getUnknownLoc(), type,
                                             lhs, rhs);
-
-  EXPECT_TRUE(mulOp);
-  module->destroy();
-}
-
-TEST_F(ArcDialectTest, DivOpCreation) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
-
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto lhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(10));
-  auto rhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(2));
-  auto divOp = builder_->create<arc::DivOp>(builder_->getUnknownLoc(), i32Type,
+      },
+      "MulOp");
+  testBinaryOp(
+      [&](mlir::Type type, mlir::Value lhs, mlir::Value rhs) {
+        return builder_->create<arc::DivOp>(builder_->getUnknownLoc(), type,
                                             lhs, rhs);
-
-  EXPECT_TRUE(divOp);
-  module->destroy();
-}
-
-TEST_F(ArcDialectTest, RemOpCreation) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
-
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto lhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(10));
-  auto rhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(3));
-  auto remOp = builder_->create<arc::RemOp>(builder_->getUnknownLoc(), i32Type,
+      },
+      "DivOp");
+  testBinaryOp(
+      [&](mlir::Type type, mlir::Value lhs, mlir::Value rhs) {
+        return builder_->create<arc::RemOp>(builder_->getUnknownLoc(), type,
                                             lhs, rhs);
-
-  EXPECT_TRUE(remOp);
-  module->destroy();
+      },
+      "RemOp");
 }
 
 TEST_F(ArcDialectTest, CmpOpCreation) {

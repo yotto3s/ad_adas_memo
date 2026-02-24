@@ -148,6 +148,32 @@ TEST_F(LoweringTestFixture, LowersVariableDeclaration) {
   EXPECT_TRUE(foundVar);
 }
 
+TEST_F(LoweringTestFixture, LowersVariableReassignment) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: a >= 0
+    //@ ensures: \result >= 0
+    int32_t foo(int32_t a, int32_t b) {
+      int32_t x = a;
+      x = a + b;
+      return x;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundAssign = false;
+  module->walk([&](arc::AssignOp) { foundAssign = true; });
+  EXPECT_TRUE(foundAssign);
+}
+
 TEST_F(LoweringTestFixture, LowersFunctionWithoutContracts) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -217,68 +243,55 @@ TEST_F(LoweringTestFixture, LowersAssignment) {
 
 // --- Slice 2: Multi-type lowering tests ---
 
-TEST_F(LoweringTestFixture, LowersI8FunctionWithCorrectIntType) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      R"(
-    #include <cstdint>
-    int8_t add_i8(int8_t a, int8_t b) {
-      return a + b;
-    }
-  )",
-      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
-      std::make_shared<clang::PCHContainerOperations>());
-  ASSERT_NE(ast, nullptr);
+// [TC-9] Parametrized type-mapping test covering all integer widths/signedness
+TEST_F(LoweringTestFixture, TypeMappingCoversAllIntegerWidths) {
+  struct TypeMappingCase {
+    const char* typeName;
+    const char* funcName;
+    unsigned expectedWidth;
+    bool expectedSigned;
+  };
 
-  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
-  mlir::MLIRContext mlirCtx;
-  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
-  ASSERT_TRUE(module);
+  const TypeMappingCase cases[] = {
+      {"int8_t", "add_i8", 8, true},
+      {"uint32_t", "add_u32", 32, false},
+      {"int16_t", "add_i16", 16, true},
+      {"uint64_t", "add_u64", 64, false},
+  };
 
-  bool foundFunc = false;
-  module->walk([&](arc::FuncOp funcOp) {
-    EXPECT_EQ(funcOp.getSymName(), "add_i8");
-    auto& block = funcOp.getBody().front();
-    for (auto arg : block.getArguments()) {
-      auto intType = llvm::dyn_cast<arc::IntType>(arg.getType());
-      ASSERT_TRUE(intType);
-      EXPECT_EQ(intType.getWidth(), 8u);
-      EXPECT_TRUE(intType.getIsSigned());
-    }
-    foundFunc = true;
-  });
-  EXPECT_TRUE(foundFunc);
-}
+  for (const auto& tc : cases) {
+    SCOPED_TRACE(tc.typeName);
 
-TEST_F(LoweringTestFixture, LowersU32FunctionAsUnsigned) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      R"(
-    #include <cstdint>
-    uint32_t add_u32(uint32_t a, uint32_t b) {
-      return a + b;
-    }
-  )",
-      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
-      std::make_shared<clang::PCHContainerOperations>());
-  ASSERT_NE(ast, nullptr);
+    std::string source = "#include <cstdint>\n";
+    source += std::string(tc.typeName) + " " + tc.funcName + "(" + tc.typeName +
+              " a, " + tc.typeName + " b) {\n";
+    source += "  return a + b;\n}\n";
 
-  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
-  mlir::MLIRContext mlirCtx;
-  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
-  ASSERT_TRUE(module);
+    auto ast = clang::tooling::buildASTFromCodeWithArgs(
+        source, {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+        std::make_shared<clang::PCHContainerOperations>());
+    ASSERT_NE(ast, nullptr);
 
-  bool foundFunc = false;
-  module->walk([&](arc::FuncOp funcOp) {
-    EXPECT_EQ(funcOp.getSymName(), "add_u32");
-    auto& block = funcOp.getBody().front();
-    for (auto arg : block.getArguments()) {
-      auto intType = llvm::dyn_cast<arc::IntType>(arg.getType());
-      ASSERT_TRUE(intType);
-      EXPECT_EQ(intType.getWidth(), 32u);
-      EXPECT_FALSE(intType.getIsSigned());
-    }
-    foundFunc = true;
-  });
-  EXPECT_TRUE(foundFunc);
+    std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+    mlir::MLIRContext mlirCtx;
+    auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+    ASSERT_TRUE(module);
+
+    bool foundFunc = false;
+    module->walk([&](arc::FuncOp funcOp) {
+      if (funcOp.getSymName() != tc.funcName)
+        return;
+      auto& block = funcOp.getBody().front();
+      for (auto arg : block.getArguments()) {
+        auto intType = llvm::dyn_cast<arc::IntType>(arg.getType());
+        ASSERT_TRUE(intType);
+        EXPECT_EQ(intType.getWidth(), tc.expectedWidth);
+        EXPECT_EQ(intType.getIsSigned(), tc.expectedSigned);
+      }
+      foundFunc = true;
+    });
+    EXPECT_TRUE(foundFunc);
+  }
 }
 
 TEST_F(LoweringTestFixture, LowersStaticCastEmitsCastOp) {
@@ -454,74 +467,6 @@ TEST_F(LoweringTestFixture, OverflowAttrOnDivRemUsesFunctionMode) {
     foundDiv = true;
   });
   EXPECT_TRUE(foundDiv);
-}
-
-// [TC-9] Type mapping for int16_t
-TEST_F(LoweringTestFixture, LowersI16FunctionWithCorrectIntType) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      R"(
-    #include <cstdint>
-    int16_t add_i16(int16_t a, int16_t b) {
-      return a + b;
-    }
-  )",
-      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
-      std::make_shared<clang::PCHContainerOperations>());
-  ASSERT_NE(ast, nullptr);
-
-  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
-  mlir::MLIRContext mlirCtx;
-  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
-  ASSERT_TRUE(module);
-
-  bool foundFunc = false;
-  module->walk([&](arc::FuncOp funcOp) {
-    if (funcOp.getSymName() != "add_i16")
-      return;
-    auto& block = funcOp.getBody().front();
-    for (auto arg : block.getArguments()) {
-      auto intType = llvm::dyn_cast<arc::IntType>(arg.getType());
-      ASSERT_TRUE(intType);
-      EXPECT_EQ(intType.getWidth(), 16u);
-      EXPECT_TRUE(intType.getIsSigned());
-    }
-    foundFunc = true;
-  });
-  EXPECT_TRUE(foundFunc);
-}
-
-// [TC-9] Type mapping for uint64_t
-TEST_F(LoweringTestFixture, LowersU64FunctionWithCorrectIntType) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      R"(
-    #include <cstdint>
-    uint64_t add_u64(uint64_t a, uint64_t b) {
-      return a + b;
-    }
-  )",
-      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
-      std::make_shared<clang::PCHContainerOperations>());
-  ASSERT_NE(ast, nullptr);
-
-  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
-  mlir::MLIRContext mlirCtx;
-  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
-  ASSERT_TRUE(module);
-
-  bool foundFunc = false;
-  module->walk([&](arc::FuncOp funcOp) {
-    if (funcOp.getSymName() != "add_u64")
-      return;
-    auto& block = funcOp.getBody().front();
-    for (auto arg : block.getArguments()) {
-      auto intType = llvm::dyn_cast<arc::IntType>(arg.getType());
-      ASSERT_TRUE(intType);
-      EXPECT_EQ(intType.getWidth(), 64u);
-      EXPECT_FALSE(intType.getIsSigned());
-    }
-    foundFunc = true;
-  });
-  EXPECT_TRUE(foundFunc);
 }
 
 // [TC-8] Unary negation with non-i32 type produces SubOp with correct width

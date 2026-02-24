@@ -301,6 +301,26 @@ INSTANTIATE_TEST_SUITE_P(
   )"}),
     AcceptedConstructName{});
 
+// [W2] Reject range-based for loop
+TEST(SubsetEnforcerTest, RejectsRangeBasedForLoop) {
+  auto result = checkSubset(R"(
+    #include <cstdint>
+    void foo() {
+      int32_t arr[3] = {1, 2, 3};
+      for (auto x : arr) {
+      }
+    }
+  )");
+  EXPECT_FALSE(result.passed);
+  bool foundRange = false;
+  for (const auto& diag : result.diagnostics) {
+    if (diag.find("range") != std::string::npos) {
+      foundRange = true;
+    }
+  }
+  EXPECT_TRUE(foundRange);
+}
+
 // ============================================================
 // Slice 2: Multi-type support tests
 // ============================================================

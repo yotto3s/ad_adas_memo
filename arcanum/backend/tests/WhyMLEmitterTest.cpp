@@ -148,6 +148,41 @@ TEST(WhyMLEmitterTest, EmitsLetBinding) {
   EXPECT_NE(result->whymlText.find("let x ="), std::string::npos);
 }
 
+TEST(WhyMLEmitterTest, EmitsIfThenElse) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    int32_t myabs(int32_t x) {
+      if (x < 0) {
+        return -x;
+      } else {
+        return x;
+      }
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("if "), std::string::npos)
+      << "Missing 'if' keyword in WhyML output.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("then"), std::string::npos)
+      << "Missing 'then' keyword in WhyML output.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("else"), std::string::npos)
+      << "Missing 'else' keyword in WhyML output.  Text:\n"
+      << result->whymlText;
+}
+
 // TC-19: Test empty module -> nullopt
 TEST(WhyMLEmitterTest, EmptyModuleReturnsNullopt) {
   mlir::MLIRContext mlirCtx;
@@ -1018,6 +1053,90 @@ TEST_F(WhyMLEmitterSlice2Test, WrapModeCastOnlyImportsComputerDivision) {
   // Should contain mod (wrap reduction)
   EXPECT_NE(result->whymlText.find("mod"), std::string::npos)
       << "Wrap-mode CastOp should emit mod expression.  Text:\n"
+      << result->whymlText;
+}
+
+// [S2-TC6] DivOp with saturate mode emits clamping, not trap assertion
+TEST_F(WhyMLEmitterSlice2Test, EmitsDivSaturateMode) {
+  auto i16Type = arc::IntType::get(&ctx_, 16, true);
+  auto result = buildAndEmitBinaryOpFunc(ctx_, i16Type, "saturate",
+                                         "div_i16_sat", ArithOpKind::Div);
+  ASSERT_TRUE(result.has_value());
+
+  // Saturate mode should emit if-then-else clamping to target bounds
+  EXPECT_NE(result->whymlText.find("if"), std::string::npos)
+      << "Missing clamping 'if' for saturate mode DivOp.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("-32768"), std::string::npos)
+      << "Missing i16 min clamp bound.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("32767"), std::string::npos)
+      << "Missing i16 max clamp bound.  Text:\n"
+      << result->whymlText;
+  // Division-by-zero assertion is always present regardless of overflow mode
+  EXPECT_NE(result->whymlText.find("<> 0"), std::string::npos)
+      << "Missing divisor-not-zero assertion.  Text:\n"
+      << result->whymlText;
+  // Saturate mode should NOT emit a range trap assertion (only clamping)
+  // Count "assert" occurrences: should be exactly one (the div-by-zero one)
+  size_t assertCount = 0;
+  size_t pos = 0;
+  while ((pos = result->whymlText.find("assert", pos)) != std::string::npos) {
+    ++assertCount;
+    ++pos;
+  }
+  EXPECT_EQ(assertCount, 1u)
+      << "Saturate mode should have only the div-by-zero assert, not a range "
+         "assert.  Text:\n"
+      << result->whymlText;
+}
+
+// [S2-TC6] CastOp (i32->i8) with saturate mode emits clamping
+TEST_F(WhyMLEmitterSlice2Test, EmitsCastSaturateMode) {
+  auto i32Type = arc::IntType::get(&ctx_, 32, true);
+  auto i8Type = arc::IntType::get(&ctx_, 8, true);
+
+  // Build a module with a narrowing CastOp with overflow="saturate"
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto funcType = builder_->getFunctionType({i32Type}, {i8Type});
+  auto funcOp = builder_->create<arc::FuncOp>(
+      builder_->getUnknownLoc(), "cast_sat_i32_to_i8", funcType,
+      /*requires_attr=*/mlir::StringAttr{},
+      /*ensures_attr=*/mlir::StringAttr{});
+
+  funcOp->setAttr("param_names",
+                  builder_->getArrayAttr({builder_->getStringAttr("x")}));
+
+  auto& entryBlock = funcOp.getBody().emplaceBlock();
+  entryBlock.addArgument(i32Type, builder_->getUnknownLoc());
+
+  builder_->setInsertionPointToEnd(&entryBlock);
+  auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(), i8Type,
+                                              entryBlock.getArgument(0));
+  // Set saturate mode on the CastOp
+  castOp->setAttr("overflow", builder_->getStringAttr("saturate"));
+  builder_->create<arc::ReturnOp>(builder_->getUnknownLoc(),
+                                  castOp.getResult());
+
+  auto result = emitWhyML(module);
+  module->destroy();
+  ASSERT_TRUE(result.has_value());
+
+  // Saturate mode should emit if-then-else clamping to i8 bounds
+  EXPECT_NE(result->whymlText.find("if"), std::string::npos)
+      << "Missing clamping 'if' for saturate mode CastOp.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("-128"), std::string::npos)
+      << "Missing i8 min clamp bound.  Text:\n"
+      << result->whymlText;
+  EXPECT_NE(result->whymlText.find("127"), std::string::npos)
+      << "Missing i8 max clamp bound.  Text:\n"
+      << result->whymlText;
+  // Saturate mode CastOp should NOT emit any trap assertion
+  EXPECT_EQ(result->whymlText.find("assert"), std::string::npos)
+      << "Saturate mode CastOp should not emit assert.  Text:\n"
       << result->whymlText;
 }
 
