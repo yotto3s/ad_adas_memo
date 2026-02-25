@@ -35,14 +35,14 @@ mlir::Type ArcDialect::parseType(mlir::DialectAsmParser& parser) const {
     bool isSigned;
   };
   auto intInfo = llvm::StringSwitch<std::optional<IntTypeInfo>>(keyword)
-                     .Case("i8", IntTypeInfo{8, true})
-                     .Case("i16", IntTypeInfo{16, true})
-                     .Case("i32", IntTypeInfo{32, true})
-                     .Case("i64", IntTypeInfo{64, true})
-                     .Case("u8", IntTypeInfo{8, false})
-                     .Case("u16", IntTypeInfo{16, false})
-                     .Case("u32", IntTypeInfo{32, false})
-                     .Case("u64", IntTypeInfo{64, false})
+                     .Case("i8", IntTypeInfo{.width = 8, .isSigned = true})
+                     .Case("i16", IntTypeInfo{.width = 16, .isSigned = true})
+                     .Case("i32", IntTypeInfo{.width = 32, .isSigned = true})
+                     .Case("i64", IntTypeInfo{.width = 64, .isSigned = true})
+                     .Case("u8", IntTypeInfo{.width = 8, .isSigned = false})
+                     .Case("u16", IntTypeInfo{.width = 16, .isSigned = false})
+                     .Case("u32", IntTypeInfo{.width = 32, .isSigned = false})
+                     .Case("u64", IntTypeInfo{.width = 64, .isSigned = false})
                      .Default(std::nullopt);
 
   if (intInfo) {
