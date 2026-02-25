@@ -10,10 +10,13 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-# Suppress Clang warnings in GoogleTest code
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  target_compile_options(gtest PRIVATE -Wno-covered-switch-default)
-  target_compile_options(gmock PRIVATE -Wno-covered-switch-default)
-endif()
+# Suppress warnings-as-errors for third-party GoogleTest code.
+# C++23 triggers new warnings (e.g., Clang -Wcharacter-conversion for char8_t)
+# that we cannot fix upstream.
+foreach(_gtest_target gtest gmock gtest_main gmock_main)
+  if(TARGET ${_gtest_target})
+    target_compile_options(${_gtest_target} PRIVATE -Wno-error)
+  endif()
+endforeach()
 
 include(GoogleTest)

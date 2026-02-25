@@ -1,10 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(Arcanum LANGUAGES C CXX)
 
-# C++17 is used instead of C++23 (spec target) because GCC 13 on Ubuntu 24.04
-# does not fully support C++23.  No C++23 features are required by Slice 1.
-# Re-evaluate when upgrading to GCC 14+ or using Clang exclusively.
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Set default build type to Debug if not specified
