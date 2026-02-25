@@ -88,7 +88,7 @@ llvm::APInt IntType::getMinValue() const {
   if (getIsSigned()) {
     return llvm::APInt::getSignedMinValue(getWidth());
   }
-  return llvm::APInt(getWidth(), 0);
+  return {getWidth(), 0};
 }
 
 llvm::APInt IntType::getMaxValue() const {

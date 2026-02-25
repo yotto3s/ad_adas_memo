@@ -106,7 +106,7 @@ private:
     // rejecting non-fixed-width types and the tool operates on declared
     // types, not promoted types.
     if (canonical->isIntegerType()) {
-      unsigned width = static_cast<unsigned>(astCtx.getTypeSize(canonical));
+      auto width = static_cast<unsigned>(astCtx.getTypeSize(canonical));
       bool isSigned = canonical->isSignedIntegerType();
       return arc::IntType::get(&mlirCtx, width, isSigned);
     }
