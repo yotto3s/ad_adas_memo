@@ -144,12 +144,12 @@ private:
       BinaryOpKind kind;
     };
     static constexpr std::array<CompOp, 6> COMP_OPS = {{
-        {"<=", BinaryOpKind::Le},
-        {">=", BinaryOpKind::Ge},
-        {"==", BinaryOpKind::Eq},
-        {"!=", BinaryOpKind::Ne},
-        {"<", BinaryOpKind::Lt},
-        {">", BinaryOpKind::Gt},
+        {.token = "<=", .kind = BinaryOpKind::Le},
+        {.token = ">=", .kind = BinaryOpKind::Ge},
+        {.token = "==", .kind = BinaryOpKind::Eq},
+        {.token = "!=", .kind = BinaryOpKind::Ne},
+        {.token = "<", .kind = BinaryOpKind::Lt},
+        {.token = ">", .kind = BinaryOpKind::Gt},
     }};
     for (const auto& op : COMP_OPS) {
       if (matchString(op.token)) {
