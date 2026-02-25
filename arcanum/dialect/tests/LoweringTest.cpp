@@ -231,7 +231,7 @@ TEST_P(ArithmeticLoweringTest, LowersArithmeticOp) {
     #include <cstdint>
     int32_t arith(int32_t a, int32_t b) {
       return a )" + cppOperator +
-                      R"( b;
+                     R"( b;
     }
   )";
 
@@ -281,7 +281,7 @@ TEST_P(ComparisonLoweringTest, LowersComparisonPredicate) {
     #include <cstdint>
     bool cmp(int32_t a) {
       return a )" + cppOperator +
-                      R"( 0;
+                     R"( 0;
     }
   )";
 
@@ -350,32 +350,29 @@ TEST_P(LogicalLoweringTest, LowersLogicalOp) {
 
 INSTANTIATE_TEST_SUITE_P(
     LogicalOps, LogicalLoweringTest,
-    ::testing::Values(
-        LogicalLoweringParam{
-            "And",
-            R"(
+    ::testing::Values(LogicalLoweringParam{"And",
+                                           R"(
     #include <cstdint>
     bool logicalAnd(int32_t a, int32_t b) {
       return a > 0 && b > 0;
     }
   )",
-            "arc.and"},
-        LogicalLoweringParam{
-            "Or",
-            R"(
+                                           "arc.and"},
+                      LogicalLoweringParam{"Or",
+                                           R"(
     #include <cstdint>
     bool logicalOr(int32_t a, int32_t b) {
       return a > 0 || b > 0;
     }
   )",
-            "arc.or"},
-        LogicalLoweringParam{"Not",
-                             R"(
+                                           "arc.or"},
+                      LogicalLoweringParam{"Not",
+                                           R"(
     bool logicalNot(bool a) {
       return !a;
     }
   )",
-                             "arc.not"}),
+                                           "arc.not"}),
     [](const ::testing::TestParamInfo<LogicalLoweringParam>& info) {
       return std::get<0>(info.param);
     });

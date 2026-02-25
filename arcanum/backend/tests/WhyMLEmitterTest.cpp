@@ -241,9 +241,9 @@ TEST(WhyMLEmitterTest, EmitsRemainderWithModAndDivisorCheck) {
 
 struct ContractTranslationParam {
   std::string name;
-  std::string contractLine;  // The //@ line
-  std::string expectedStr;   // Substring expected in WhyML output
-  std::string absentStr;     // Substring that must NOT appear (empty = skip)
+  std::string contractLine; // The //@ line
+  std::string expectedStr;  // Substring expected in WhyML output
+  std::string absentStr;    // Substring that must NOT appear (empty = skip)
 };
 
 class ContractTranslationTest
@@ -255,7 +255,7 @@ TEST_P(ContractTranslationTest, TranslatesOperator) {
   std::string code = R"(
     #include <cstdint>
     //@ )" + param.contractLine +
-                      R"(
+                     R"(
     int32_t foo(int32_t a) { return a; }
   )";
 
@@ -285,13 +285,11 @@ TEST_P(ContractTranslationTest, TranslatesOperator) {
       ASSERT_NE(ensPos, std::string::npos);
       auto afterEns = result->whymlText.substr(ensPos);
       EXPECT_EQ(afterEns.find(param.absentStr), std::string::npos)
-          << "WhyML output still contains '" << param.absentStr
-          << "'.  Text:\n"
+          << "WhyML output still contains '" << param.absentStr << "'.  Text:\n"
           << result->whymlText;
     } else {
       EXPECT_EQ(result->whymlText.find(param.absentStr), std::string::npos)
-          << "WhyML output still contains '" << param.absentStr
-          << "'.  Text:\n"
+          << "WhyML output still contains '" << param.absentStr << "'.  Text:\n"
           << result->whymlText;
     }
   }
@@ -330,7 +328,7 @@ TEST_P(ModuleNameTest, ConvertsName) {
     #include <cstdint>
     //@ ensures: \result >= 0
     int32_t )" + param.funcName +
-                      R"((int32_t a) { return a; }
+                     R"((int32_t a) { return a; }
   )";
 
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
@@ -355,9 +353,9 @@ TEST_P(ModuleNameTest, ConvertsName) {
 
 INSTANTIATE_TEST_SUITE_P(
     WhyMLEmitter, ModuleNameTest,
-    ::testing::Values(
-        ModuleNameParam{"SnakeCase", "my_func_name", "MyFuncName"},
-        ModuleNameParam{"CamelCase", "myFunc", "MyFunc"}),
+    ::testing::Values(ModuleNameParam{"SnakeCase", "my_func_name",
+                                      "MyFuncName"},
+                      ModuleNameParam{"CamelCase", "myFunc", "MyFunc"}),
     [](const ::testing::TestParamInfo<ModuleNameParam>& info) {
       return info.param.name;
     });
@@ -401,16 +399,13 @@ TEST_P(ComputerDivisionImportTest, EmitsImport) {
 
 INSTANTIATE_TEST_SUITE_P(
     WhyMLEmitter, ComputerDivisionImportTest,
-    ::testing::Values(
-        ComputerDivisionImportParam{
-            "Division",
-            R"(
+    ::testing::Values(ComputerDivisionImportParam{"Division",
+                                                  R"(
     #include <cstdint>
     int32_t mydiv(int32_t a, int32_t b) { return a / b; }
   )"},
-        ComputerDivisionImportParam{
-            "Modulo",
-            R"(
+                      ComputerDivisionImportParam{"Modulo",
+                                                  R"(
     #include <cstdint>
     int32_t mymod(int32_t a, int32_t b) { return a % b; }
   )"}),

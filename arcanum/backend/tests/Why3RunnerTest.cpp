@@ -26,25 +26,24 @@ TEST_P(ParseStatusTest, ParsesStatus) {
 
 INSTANTIATE_TEST_SUITE_P(
     Why3Runner, ParseStatusTest,
-    ::testing::Values(
-        ParseStatusParam{"Valid",
-                         R"(
+    ::testing::Values(ParseStatusParam{"Valid",
+                                       R"(
 File "test.mlw", line 5, characters 10-30:
     Goal safe_add'vc. Valid (0.01s, 0 steps).
 )",
-                         ObligationStatus::Valid},
-        ParseStatusParam{"Timeout",
-                         R"(
+                                       ObligationStatus::Valid},
+                      ParseStatusParam{"Timeout",
+                                       R"(
 File "test.mlw", line 5, characters 10-30:
     Goal safe_add'vc. Timeout.
 )",
-                         ObligationStatus::Timeout},
-        ParseStatusParam{"Unknown",
-                         R"(
+                                       ObligationStatus::Timeout},
+                      ParseStatusParam{"Unknown",
+                                       R"(
 File "test.mlw", line 5, characters 10-30:
     Goal safe_add'vc. Unknown ("unknown").
 )",
-                         ObligationStatus::Unknown}),
+                                       ObligationStatus::Unknown}),
     [](const ::testing::TestParamInfo<ParseStatusParam>& info) {
       return info.param.name;
     });

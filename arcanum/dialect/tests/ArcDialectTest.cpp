@@ -51,7 +51,8 @@ INSTANTIATE_TEST_SUITE_P(
                           [](mlir::MLIRContext* ctx) -> mlir::Type {
                             return arc::I32Type::get(ctx);
                           }},
-        TypeCreationParam{"Bool", [](mlir::MLIRContext* ctx) -> mlir::Type {
+        TypeCreationParam{"Bool",
+                          [](mlir::MLIRContext* ctx) -> mlir::Type {
                             return arc::BoolType::get(ctx);
                           }}),
     [](const ::testing::TestParamInfo<TypeCreationParam>& info) {
@@ -90,36 +91,31 @@ TEST_P(BinaryOpCreationTest, CreatesOp) {
 INSTANTIATE_TEST_SUITE_P(
     ArcBinaryOps, BinaryOpCreationTest,
     ::testing::Values(
-        BinaryOpParam{
-            "Add",
-            [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
-               mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
-              return b.create<arc::AddOp>(loc, ty, lhs, rhs);
-            }},
-        BinaryOpParam{
-            "Sub",
-            [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
-               mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
-              return b.create<arc::SubOp>(loc, ty, lhs, rhs);
-            }},
-        BinaryOpParam{
-            "Mul",
-            [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
-               mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
-              return b.create<arc::MulOp>(loc, ty, lhs, rhs);
-            }},
-        BinaryOpParam{
-            "Div",
-            [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
-               mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
-              return b.create<arc::DivOp>(loc, ty, lhs, rhs);
-            }},
-        BinaryOpParam{
-            "Rem",
-            [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
-               mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
-              return b.create<arc::RemOp>(loc, ty, lhs, rhs);
-            }}),
+        BinaryOpParam{"Add",
+                      [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
+                         mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
+                        return b.create<arc::AddOp>(loc, ty, lhs, rhs);
+                      }},
+        BinaryOpParam{"Sub",
+                      [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
+                         mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
+                        return b.create<arc::SubOp>(loc, ty, lhs, rhs);
+                      }},
+        BinaryOpParam{"Mul",
+                      [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
+                         mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
+                        return b.create<arc::MulOp>(loc, ty, lhs, rhs);
+                      }},
+        BinaryOpParam{"Div",
+                      [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
+                         mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
+                        return b.create<arc::DivOp>(loc, ty, lhs, rhs);
+                      }},
+        BinaryOpParam{"Rem",
+                      [](mlir::OpBuilder& b, mlir::Location loc, mlir::Type ty,
+                         mlir::Value lhs, mlir::Value rhs) -> mlir::Operation* {
+                        return b.create<arc::RemOp>(loc, ty, lhs, rhs);
+                      }}),
     [](const ::testing::TestParamInfo<BinaryOpParam>& info) {
       return std::get<0>(info.param);
     });
@@ -225,8 +221,8 @@ TEST_F(ArcDialectTest, AssignOpCreation) {
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(0));
   auto value = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(42));
-  auto assignOp = builder_->create<arc::AssignOp>(builder_->getUnknownLoc(),
-                                                  target, value);
+  auto assignOp =
+      builder_->create<arc::AssignOp>(builder_->getUnknownLoc(), target, value);
 
   EXPECT_TRUE(assignOp);
   module->destroy();
