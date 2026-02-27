@@ -306,6 +306,94 @@ TEST(ContractParserTest, ParsesResultRef) {
   EXPECT_EQ(expr->left->kind, ContractExprKind::ResultRef);
 }
 
+// --- TC-8: Comprehensive contract expression parser tests ---
+
+TEST(ContractParserTest, ParsesAllComparisonOperators) {
+  // Test <, <=, >, >=, ==, !=
+  std::unique_ptr<clang::ASTUnit> ast;
+
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ requires: a < 10
+    //@ requires: a <= 20
+    //@ requires: a > 0
+    //@ requires: a >= 1
+    //@ requires: a == 5
+    //@ requires: a != 3
+    int32_t foo(int32_t a) { return a; }
+  )",
+                                   ast);
+
+  auto it = contracts.begin();
+  ASSERT_EQ(it->second.preconditions.size(), 6u);
+  EXPECT_EQ(it->second.preconditions[0]->binaryOp, BinaryOpKind::Lt);
+  EXPECT_EQ(it->second.preconditions[1]->binaryOp, BinaryOpKind::Le);
+  EXPECT_EQ(it->second.preconditions[2]->binaryOp, BinaryOpKind::Gt);
+  EXPECT_EQ(it->second.preconditions[3]->binaryOp, BinaryOpKind::Ge);
+  EXPECT_EQ(it->second.preconditions[4]->binaryOp, BinaryOpKind::Eq);
+  EXPECT_EQ(it->second.preconditions[5]->binaryOp, BinaryOpKind::Ne);
+}
+
+TEST(ContractParserTest, ParsesArithmeticOperators) {
+  struct ArithmeticCase {
+    const char* opName;
+    const char* source;
+    BinaryOpKind expectedKind;
+  };
+
+  const ArithmeticCase cases[] = {
+      {"Add",
+       R"(
+    #include <cstdint>
+    //@ ensures: \result == a + b
+    int32_t foo(int32_t a, int32_t b) { return a + b; }
+  )",
+       BinaryOpKind::Add},
+      {"Sub",
+       R"(
+    #include <cstdint>
+    //@ ensures: \result == a - b
+    int32_t foo(int32_t a, int32_t b) { return a - b; }
+  )",
+       BinaryOpKind::Sub},
+      {"Mul",
+       R"(
+    #include <cstdint>
+    //@ ensures: \result == a * b
+    int32_t foo(int32_t a, int32_t b) { return a * b; }
+  )",
+       BinaryOpKind::Mul},
+      {"Div",
+       R"(
+    #include <cstdint>
+    //@ ensures: \result == a / b
+    int32_t foo(int32_t a, int32_t b) { return a / b; }
+  )",
+       BinaryOpKind::Div},
+      {"Rem",
+       R"(
+    #include <cstdint>
+    //@ ensures: \result == a % b
+    int32_t foo(int32_t a, int32_t b) { return a % b; }
+  )",
+       BinaryOpKind::Rem},
+  };
+
+  for (const auto& tc : cases) {
+    SCOPED_TRACE(tc.opName);
+    std::unique_ptr<clang::ASTUnit> ast;
+    auto contracts = parseFromSource(tc.source, ast);
+
+    auto it = contracts.begin();
+    ASSERT_EQ(it->second.postconditions.size(), 1u);
+    auto& expr = it->second.postconditions[0];
+    EXPECT_EQ(expr->kind, ContractExprKind::BinaryOp);
+    EXPECT_EQ(expr->binaryOp, BinaryOpKind::Eq);
+    EXPECT_EQ(expr->right->kind, ContractExprKind::BinaryOp);
+    EXPECT_EQ(expr->right->binaryOp, tc.expectedKind);
+  }
+}
+
 TEST(ContractParserTest, ParsesOrExpression) {
   std::unique_ptr<clang::ASTUnit> ast;
   auto contracts = parseFromSource(R"(
@@ -501,6 +589,114 @@ TEST(ContractParserTest, ParsesMultipleFunctionsWithContracts) {
   }
   EXPECT_TRUE(foundRequires);
   EXPECT_TRUE(foundEnsures);
+}
+
+// --- Task 5: Overflow mode annotation tests ---
+
+TEST(ContractParserTest, OverflowModeDefaultIsTrap) {
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ requires: a >= 0
+    int32_t foo(int32_t a) { return a; }
+  )",
+                                   ast);
+
+  EXPECT_EQ(contracts.size(), 1u);
+  auto it = contracts.begin();
+  EXPECT_EQ(it->second.overflowMode, "trap");
+}
+
+TEST(ContractParserTest, OverflowModeTrap) {
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ overflow: trap
+    //@ requires: a >= 0
+    int32_t foo(int32_t a) { return a; }
+  )",
+                                   ast);
+
+  EXPECT_EQ(contracts.size(), 1u);
+  auto it = contracts.begin();
+  EXPECT_EQ(it->second.overflowMode, "trap");
+}
+
+TEST(ContractParserTest, OverflowModeWrap) {
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ overflow: wrap
+    //@ requires: a >= 0
+    int32_t foo(int32_t a) { return a; }
+  )",
+                                   ast);
+
+  EXPECT_EQ(contracts.size(), 1u);
+  auto it = contracts.begin();
+  EXPECT_EQ(it->second.overflowMode, "wrap");
+}
+
+TEST(ContractParserTest, OverflowModeSaturate) {
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ overflow: saturate
+    //@ requires: a >= 0
+    int32_t foo(int32_t a) { return a; }
+  )",
+                                   ast);
+
+  EXPECT_EQ(contracts.size(), 1u);
+  auto it = contracts.begin();
+  EXPECT_EQ(it->second.overflowMode, "saturate");
+}
+
+TEST(ContractParserTest, OverflowModeOnlyStoresContract) {
+  // A function with only an overflow annotation (non-trap) should be stored.
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ overflow: wrap
+    int32_t foo(int32_t a) { return a; }
+  )",
+                                   ast);
+
+  EXPECT_EQ(contracts.size(), 1u);
+  auto it = contracts.begin();
+  EXPECT_EQ(it->second.overflowMode, "wrap");
+  EXPECT_TRUE(it->second.preconditions.empty());
+  EXPECT_TRUE(it->second.postconditions.empty());
+}
+
+TEST(ContractParserTest, OverflowModeTrapOnlyNotStored) {
+  // A function with only an explicit trap annotation (same as default)
+  // and no other contracts should NOT be stored.
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ overflow: trap
+    int32_t foo(int32_t a) { return a; }
+  )",
+                                   ast);
+
+  EXPECT_TRUE(contracts.empty());
+}
+
+TEST(ContractParserTest, OverflowModeInvalidWarns) {
+  // An invalid overflow mode should warn and default to "trap".
+  std::unique_ptr<clang::ASTUnit> ast;
+  // Redirect stderr is not easy in unit tests; just verify the contract
+  // is not stored (no other valid annotations).
+  auto contracts = parseFromSource(R"(
+    #include <cstdint>
+    //@ overflow: invalid_mode
+    int32_t foo(int32_t a) { return a; }
+  )",
+                                   ast);
+
+  // Invalid mode defaults to "trap", no other contracts, so map is empty.
+  EXPECT_TRUE(contracts.empty());
 }
 
 } // namespace

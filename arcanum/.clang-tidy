@@ -62,6 +62,6 @@ CheckOptions:
   - key: readability-identifier-naming.NamespaceCase
     value: lower_case
   - key: readability-magic-numbers.IgnoredIntegerValues
-    value: '0;1;2;-1'
+    value: '0;1;2;-1;8;16;32;64;128'
   - key: bugprone-unused-return-value.CheckedFunctions
     value: ''

@@ -3,6 +3,7 @@
 
 #include "arcanum/dialect/ArcDialect.h"
 #include "mlir/IR/Types.h"
+#include "llvm/ADT/APInt.h"
 
 #define GET_TYPEDEF_CLASSES
 #include "arcanum/dialect/ArcTypes.h.inc"

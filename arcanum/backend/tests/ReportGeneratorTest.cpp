@@ -2,57 +2,116 @@
 
 #include <gtest/gtest.h>
 
+#include <initializer_list>
+
 namespace arcanum {
 namespace {
 
-TEST(ReportGeneratorTest, AllPassedReport) {
+struct ReportCase {
+  const char* label;
   std::vector<ObligationResult> obligations;
-  obligations.push_back({"overflow_check'vc", ObligationStatus::Valid,
-                         std::chrono::milliseconds(100), ""});
-  obligations.push_back({"postcondition'vc", ObligationStatus::Valid,
-                         std::chrono::milliseconds(200), ""});
-
   std::map<std::string, LocationEntry> locMap;
-  locMap["safe_add"] = {"safe_add", "input.cpp", 6};
+  bool expectedAllPassed;
+  int expectedPassCount;
+  int expectedFailCount;
+  int expectedTimeoutCount;
+  std::vector<std::string> expectedPatterns;
+};
 
-  auto report = generateReport(obligations, locMap);
+// Consolidated test for AllPassed, Failed, Timeout, and SingleFailure reports.
+TEST(ReportGeneratorTest, SingleOutcomeReports) {
+  std::vector<ReportCase> cases;
 
-  EXPECT_TRUE(report.allPassed);
-  EXPECT_EQ(report.passCount, 1);
-  EXPECT_EQ(report.failCount, 0);
-  EXPECT_EQ(report.timeoutCount, 0);
-  EXPECT_NE(report.text.find("[PASS]"), std::string::npos);
-  EXPECT_NE(report.text.find("2/2"), std::string::npos);
-  EXPECT_NE(report.text.find("Summary"), std::string::npos);
-}
+  // AllPassedReport
+  {
+    ReportCase tc;
+    tc.label = "AllPassed";
+    tc.obligations = {
+        {"overflow_check'vc", ObligationStatus::Valid,
+         std::chrono::milliseconds(100), ""},
+        {"postcondition'vc", ObligationStatus::Valid,
+         std::chrono::milliseconds(200), ""},
+    };
+    tc.locMap["safe_add"] = {"safe_add", "input.cpp", 6};
+    tc.expectedAllPassed = true;
+    tc.expectedPassCount = 1;
+    tc.expectedFailCount = 0;
+    tc.expectedTimeoutCount = 0;
+    tc.expectedPatterns = {"[PASS]", "2/2", "Summary"};
+    cases.push_back(std::move(tc));
+  }
 
-TEST(ReportGeneratorTest, FailedReport) {
-  std::vector<ObligationResult> obligations;
-  obligations.push_back({"overflow_check'vc", ObligationStatus::Valid,
-                         std::chrono::milliseconds(100), ""});
-  obligations.push_back({"postcondition'vc", ObligationStatus::Unknown,
-                         std::chrono::milliseconds(200), ""});
+  // FailedReport
+  {
+    ReportCase tc;
+    tc.label = "Failed";
+    tc.obligations = {
+        {"overflow_check'vc", ObligationStatus::Valid,
+         std::chrono::milliseconds(100), ""},
+        {"postcondition'vc", ObligationStatus::Unknown,
+         std::chrono::milliseconds(200), ""},
+    };
+    tc.locMap["bad_func"] = {"bad_func", "input.cpp", 10};
+    tc.expectedAllPassed = false;
+    tc.expectedPassCount = -1;    // not checked
+    tc.expectedFailCount = -1;    // not checked
+    tc.expectedTimeoutCount = -1; // not checked
+    tc.expectedPatterns = {"[FAIL]"};
+    cases.push_back(std::move(tc));
+  }
 
-  std::map<std::string, LocationEntry> locMap;
-  locMap["bad_func"] = {"bad_func", "input.cpp", 10};
+  // TimeoutReport
+  {
+    ReportCase tc;
+    tc.label = "Timeout";
+    tc.obligations = {
+        {"invariant'vc", ObligationStatus::Timeout,
+         std::chrono::milliseconds(30000), ""},
+    };
+    tc.expectedAllPassed = false;
+    tc.expectedPassCount = -1; // not checked
+    tc.expectedFailCount = -1; // not checked
+    tc.expectedTimeoutCount = 1;
+    tc.expectedPatterns = {};
+    cases.push_back(std::move(tc));
+  }
 
-  auto report = generateReport(obligations, locMap);
+  // [W19/TC-9] SingleFailureReport
+  {
+    ReportCase tc;
+    tc.label = "SingleFailure";
+    tc.obligations = {
+        {"postcondition'vc", ObligationStatus::Failure,
+         std::chrono::milliseconds(50), ""},
+    };
+    tc.locMap["fail_func"] = {"fail_func", "input.cpp", 10};
+    tc.expectedAllPassed = false;
+    tc.expectedPassCount = 0;
+    tc.expectedFailCount = 1;
+    tc.expectedTimeoutCount = -1; // not checked
+    tc.expectedPatterns = {"[FAIL]", "0/1", "fail_func"};
+    cases.push_back(std::move(tc));
+  }
 
-  EXPECT_FALSE(report.allPassed);
-  EXPECT_NE(report.text.find("[FAIL]"), std::string::npos);
-}
+  for (const auto& tc : cases) {
+    SCOPED_TRACE(tc.label);
+    auto report = generateReport(tc.obligations, tc.locMap);
 
-TEST(ReportGeneratorTest, TimeoutReport) {
-  std::vector<ObligationResult> obligations;
-  obligations.push_back({"invariant'vc", ObligationStatus::Timeout,
-                         std::chrono::milliseconds(30000), ""});
-
-  std::map<std::string, LocationEntry> locMap;
-
-  auto report = generateReport(obligations, locMap);
-
-  EXPECT_FALSE(report.allPassed);
-  EXPECT_EQ(report.timeoutCount, 1);
+    EXPECT_EQ(report.allPassed, tc.expectedAllPassed);
+    if (tc.expectedPassCount >= 0) {
+      EXPECT_EQ(report.passCount, tc.expectedPassCount);
+    }
+    if (tc.expectedFailCount >= 0) {
+      EXPECT_EQ(report.failCount, tc.expectedFailCount);
+    }
+    if (tc.expectedTimeoutCount >= 0) {
+      EXPECT_EQ(report.timeoutCount, tc.expectedTimeoutCount);
+    }
+    for (const auto& pattern : tc.expectedPatterns) {
+      EXPECT_NE(report.text.find(pattern), std::string::npos)
+          << "Expected pattern not found: " << pattern;
+    }
+  }
 }
 
 TEST(ReportGeneratorTest, EmptyObligations) {
@@ -87,25 +146,6 @@ TEST(ReportGeneratorTest, MixedObligationStatuses) {
   EXPECT_EQ(report.failCount, 1);
   EXPECT_NE(report.text.find("[FAIL]"), std::string::npos);
   EXPECT_NE(report.text.find("Summary"), std::string::npos);
-}
-
-// [W19/TC-9] Single Failure obligation report
-TEST(ReportGeneratorTest, SingleFailureReport) {
-  std::vector<ObligationResult> obligations;
-  obligations.push_back({"postcondition'vc", ObligationStatus::Failure,
-                         std::chrono::milliseconds(50), ""});
-
-  std::map<std::string, LocationEntry> locMap;
-  locMap["fail_func"] = {"fail_func", "input.cpp", 10};
-
-  auto report = generateReport(obligations, locMap);
-
-  EXPECT_FALSE(report.allPassed);
-  EXPECT_EQ(report.failCount, 1);
-  EXPECT_EQ(report.passCount, 0);
-  EXPECT_NE(report.text.find("[FAIL]"), std::string::npos);
-  EXPECT_NE(report.text.find("0/1"), std::string::npos);
-  EXPECT_NE(report.text.find("fail_func"), std::string::npos);
 }
 
 // [W13] Multi-function report test

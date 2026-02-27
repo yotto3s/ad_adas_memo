@@ -47,10 +47,20 @@ add_mlir_dialect_library(ArcDialect
   MLIRSupport
   MLIRFuncDialect
 )
+# add_mlir_dialect_library creates an obj.ArcDialect OBJECT library that
+# compiles the sources.  SYSTEM includes must also be set on it so that
+# MLIR/LLVM header warnings are suppressed (C++20 reversed-comparison
+# ambiguity in GCC).
 target_include_directories(ArcDialect SYSTEM PUBLIC
   ${ARCANUM_LLVM_INCLUDE_DIRS}
   ${ARCANUM_MLIR_INCLUDE_DIRS}
 )
+if(TARGET obj.ArcDialect)
+  target_include_directories(obj.ArcDialect SYSTEM PRIVATE
+    ${ARCANUM_LLVM_INCLUDE_DIRS}
+    ${ARCANUM_MLIR_INCLUDE_DIRS}
+  )
+endif()
 target_include_directories(ArcDialect PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>

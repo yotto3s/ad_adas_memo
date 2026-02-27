@@ -38,6 +38,43 @@ static cl::opt<int> timeout("timeout",
                             cl::init(arcanum::DEFAULT_TIMEOUT_SECONDS),
                             cl::cat(arcanumCategory));
 
+static bool validateSourceFilesExist(const std::vector<std::string>& files) {
+  for (const auto& file : files) {
+    if (!llvm::sys::fs::exists(file)) {
+      llvm::errs() << "error: file not found: " << file << "\n";
+      return false;
+    }
+  }
+  return true;
+}
+
+static void configureClangToolAdjusters(ClangTool& tool) {
+  tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
+      "-fparse-all-comments", ArgumentInsertPosition::BEGIN));
+  // Suppress errors from GCC-specific warning flags in compile_commands.json
+  // (e.g., -Wno-class-memaccess) when Clang processes them.
+  tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
+      "-Wno-unknown-warning-option", ArgumentInsertPosition::BEGIN));
+  tool.appendArgumentsAdjuster(getClangStripOutputAdjuster());
+}
+
+static bool loweringHasFallbacks() {
+  return arcanum::DiagnosticTracker::getFallbackCount() > 0;
+}
+
+static void reportFallbackError() {
+  llvm::errs() << "error: " << arcanum::DiagnosticTracker::getFallbackCount()
+               << " expression(s) used zero-constant fallback during "
+                  "lowering. Results would be unreliable.\n";
+}
+
+static void removeFileWithWarning(const std::string& path) {
+  auto removeEc = llvm::sys::fs::remove(path);
+  if (removeEc) {
+    llvm::errs() << "warning: could not remove temp file: " << path << "\n";
+  }
+}
+
 int main(int argc, const char** argv) {
   auto expectedParser =
       CommonOptionsParser::create(argc, argv, arcanumCategory);
@@ -59,24 +96,14 @@ int main(int argc, const char** argv) {
     return static_cast<int>(arcanum::ExitCode::InternalError);
   }
 
-  // Validate input files exist
-  for (const auto& file : sourceFiles) {
-    if (!llvm::sys::fs::exists(file)) {
-      llvm::errs() << "error: file not found: " << file << "\n";
-      return static_cast<int>(arcanum::ExitCode::InternalError);
-    }
+  if (!validateSourceFilesExist(sourceFiles)) {
+    return static_cast<int>(arcanum::ExitCode::InternalError);
   }
 
   // Stage 1: Clang Frontend — parse source into AST using buildASTs
   ClangTool tool(optionsParser.getCompilations(),
                  optionsParser.getSourcePathList());
-  tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
-      "-fparse-all-comments", ArgumentInsertPosition::BEGIN));
-  // Suppress errors from GCC-specific warning flags in compile_commands.json
-  // (e.g., -Wno-class-memaccess) when Clang processes them.
-  tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
-      "-Wno-unknown-warning-option", ArgumentInsertPosition::BEGIN));
-  tool.appendArgumentsAdjuster(getClangStripOutputAdjuster());
+  configureClangToolAdjusters(tool);
 
   std::vector<std::unique_ptr<clang::ASTUnit>> astUnits;
   int buildResult = tool.buildASTs(astUnits);
@@ -111,10 +138,8 @@ int main(int argc, const char** argv) {
   // Abort early if fallback substitutions occurred during lowering.
   // Fallbacks produce fabricated zero values that make verification unsound.
   // Check here (after Stage 4) to avoid wasting solver time in Stages 5-7.
-  if (arcanum::DiagnosticTracker::getFallbackCount() > 0) {
-    llvm::errs() << "error: " << arcanum::DiagnosticTracker::getFallbackCount()
-                 << " expression(s) used zero-constant fallback during "
-                    "lowering. Results would be unreliable.\n";
+  if (loweringHasFallbacks()) {
+    reportFallbackError();
     return static_cast<int>(arcanum::ExitCode::InternalError);
   }
 
@@ -136,11 +161,7 @@ int main(int argc, const char** argv) {
       whymlResult->filePath, whymlResult->moduleToFuncMap, why3Path, timeout);
 
   // Clean up the temporary .mlw file created by the WhyML emitter.
-  auto removeEc = llvm::sys::fs::remove(whymlResult->filePath);
-  if (removeEc) {
-    llvm::errs() << "warning: could not remove temp file: "
-                 << whymlResult->filePath << "\n";
-  }
+  removeFileWithWarning(whymlResult->filePath);
 
   // Stage 8: Report Generator
   auto report = arcanum::generateReport(obligations, whymlResult->locationMap);

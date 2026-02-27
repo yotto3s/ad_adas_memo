@@ -16,6 +16,91 @@ namespace {
 constexpr size_t DETAIL_GROUP_INDEX = 3;
 /// Conversion factor from seconds to milliseconds.
 constexpr int MS_PER_SECOND = 1000;
+
+ObligationStatus parseObligationStatus(const std::string& statusStr) {
+  if (statusStr == "Valid") {
+    return ObligationStatus::Valid;
+  }
+  if (statusStr == "Timeout") {
+    return ObligationStatus::Timeout;
+  }
+  if (statusStr == "Unknown") {
+    return ObligationStatus::Unknown;
+  }
+  return ObligationStatus::Failure;
+}
+
+std::optional<std::chrono::milliseconds>
+parseDurationMs(const std::string& detail) {
+  static const std::regex DURATION_REGEX(R"(([\d.]+)s)");
+  std::smatch durMatch;
+  if (!std::regex_search(detail, durMatch, DURATION_REGEX)) {
+    return std::nullopt;
+  }
+  auto durStr = durMatch[1].str();
+  double seconds = 0.0;
+  auto [ptr, ec] =
+      std::from_chars(durStr.data(), durStr.data() + durStr.size(), seconds);
+  (void)ptr;
+  if (ec != std::errc{}) {
+    return std::nullopt;
+  }
+  return std::chrono::milliseconds(static_cast<int>(seconds * MS_PER_SECOND));
+}
+
+/// Find the why3 binary or return a single-error result.
+llvm::Expected<std::string> findWhy3Binary(const std::string& why3Binary) {
+  auto why3 = llvm::sys::findProgramByName(why3Binary);
+  if (!why3) {
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "why3 binary not found");
+  }
+  return why3.get();
+}
+
+llvm::SmallVector<llvm::StringRef, 8> buildWhy3Args(const std::string& why3Path,
+                                                    const std::string& mlwPath,
+                                                    int timeoutSeconds,
+                                                    std::string& timelimitArg) {
+  timelimitArg = "--timelimit=" + std::to_string(timeoutSeconds);
+  llvm::SmallVector<llvm::StringRef, 8> args;
+  args.push_back(why3Path);
+  args.push_back("prove");
+  args.push_back("-P");
+  args.push_back("z3");
+  args.push_back(timelimitArg);
+  args.push_back(mlwPath);
+  return args;
+}
+
+/// Create a temp file for capturing Why3 stdout/stderr, or return an error.
+llvm::Expected<llvm::SmallString<128>> createWhy3TempFile() {
+  llvm::SmallString<128> outputPath; // NOLINT(readability-magic-numbers)
+  std::error_code ec =
+      llvm::sys::fs::createTemporaryFile("why3out", "txt", outputPath);
+  if (ec) {
+    return llvm::createStringError(ec, "failed to create temp file");
+  }
+  return outputPath;
+}
+
+void removeFileWithWarning(const llvm::SmallString<128>& path) {
+  auto removeEc = llvm::sys::fs::remove(path);
+  if (removeEc) {
+    llvm::errs() << "warning: could not remove temp file: " << path << "\n";
+  }
+}
+
+std::string readAndRemoveTempFile(const llvm::SmallString<128>& outputPath) {
+  auto bufOrErr = llvm::MemoryBuffer::getFile(outputPath);
+  std::string output;
+  if (bufOrErr) {
+    output = (*bufOrErr)->getBuffer().str();
+  }
+  removeFileWithWarning(outputPath);
+  return output;
+}
+
 } // namespace
 
 /// Parse Why3 stdout into obligation results.
@@ -62,34 +147,13 @@ parseWhy3Output(const std::string& output,
       ObligationResult result;
       result.name = match[1].str();
       result.functionName = currentFuncName;
-
-      auto statusStr = match[2].str();
-      if (statusStr == "Valid") {
-        result.status = ObligationStatus::Valid;
-      } else if (statusStr == "Timeout") {
-        result.status = ObligationStatus::Timeout;
-      } else if (statusStr == "Unknown") {
-        result.status = ObligationStatus::Unknown;
-      } else {
-        result.status = ObligationStatus::Failure;
-      }
+      result.status = parseObligationStatus(match[2].str());
 
       // Parse duration if present (e.g., "0.01s, 0 steps")
       if (match.size() > DETAIL_GROUP_INDEX &&
           match[DETAIL_GROUP_INDEX].matched) {
-        static const std::regex DURATION_REGEX(R"(([\d.]+)s)");
-        std::smatch durMatch;
-        auto detailStr = match[DETAIL_GROUP_INDEX].str();
-        if (std::regex_search(detailStr, durMatch, DURATION_REGEX)) {
-          auto durStr = durMatch[1].str();
-          double seconds = 0.0;
-          auto [ptr, ec] = std::from_chars(
-              durStr.data(), durStr.data() + durStr.size(), seconds);
-          (void)ptr;
-          if (ec == std::errc{}) {
-            result.duration = std::chrono::milliseconds(
-                static_cast<int>(seconds * MS_PER_SECOND));
-          }
+        if (auto dur = parseDurationMs(match[DETAIL_GROUP_INDEX].str())) {
+          result.duration = *dur;
         }
       }
 
@@ -104,35 +168,28 @@ std::vector<ObligationResult>
 runWhy3(const std::string& mlwPath,
         const std::map<std::string, std::string>& moduleToFuncMap,
         const std::string& why3Binary, int timeoutSeconds) {
-  // Find the why3 binary
-  auto why3 = llvm::sys::findProgramByName(why3Binary);
-  if (!why3) {
+  auto why3PathResult = findWhy3Binary(why3Binary);
+  if (!why3PathResult) {
+    llvm::consumeError(why3PathResult.takeError());
     ObligationResult err;
     err.name = "why3_not_found";
     err.status = ObligationStatus::Failure;
     return {err};
   }
+  std::string why3Path = std::move(*why3PathResult);
 
-  // Build argument list for why3 prove
-  llvm::SmallVector<llvm::StringRef, 8> args;
-  args.push_back(why3.get());
-  args.push_back("prove");
-  args.push_back("-P");
-  args.push_back("z3");
-  std::string timelimitArg = "--timelimit=" + std::to_string(timeoutSeconds);
-  args.push_back(timelimitArg);
-  args.push_back(mlwPath);
+  std::string timelimitArg;
+  auto args = buildWhy3Args(why3Path, mlwPath, timeoutSeconds, timelimitArg);
 
-  // Create temp file to capture stdout+stderr
-  llvm::SmallString<128> outputPath; // NOLINT(readability-magic-numbers)
-  std::error_code ec =
-      llvm::sys::fs::createTemporaryFile("why3out", "txt", outputPath);
-  if (ec) {
+  auto tempFileResult = createWhy3TempFile();
+  if (!tempFileResult) {
+    llvm::consumeError(tempFileResult.takeError());
     ObligationResult err;
     err.name = "execution_error";
     err.status = ObligationStatus::Failure;
     return {err};
   }
+  llvm::SmallString<128> outputPath = std::move(*tempFileResult);
 
   std::array<std::optional<llvm::StringRef>, 3> redirects = {
       // NOLINT(readability-magic-numbers)
@@ -141,20 +198,10 @@ runWhy3(const std::string& mlwPath,
       llvm::StringRef(outputPath), // stderr -> same file
   };
 
-  int exitCode = llvm::sys::ExecuteAndWait(why3.get(), args,
+  int exitCode = llvm::sys::ExecuteAndWait(why3Path, args,
                                            /*Env=*/std::nullopt, redirects);
 
-  // Read output file
-  auto bufOrErr = llvm::MemoryBuffer::getFile(outputPath);
-  std::string output;
-  if (bufOrErr) {
-    output = (*bufOrErr)->getBuffer().str();
-  }
-  auto removeEc = llvm::sys::fs::remove(outputPath);
-  if (removeEc) {
-    llvm::errs() << "warning: could not remove temp file: " << outputPath
-                 << "\n";
-  }
+  std::string output = readAndRemoveTempFile(outputPath);
 
   // Check exit code: non-zero indicates Why3 crashed or had config errors.
   // Parse whatever output was produced but return Failure if no goals

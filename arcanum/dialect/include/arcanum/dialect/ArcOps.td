@@ -89,6 +89,30 @@ def Arc_RemOp : Arc_Op<"rem", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// Cast operation
+//===----------------------------------------------------------------------===//
+
+// Note (SC-8): Overflow mode is stored as a raw string attribute ("overflow")
+// on arithmetic ops rather than a formal TableGen enum.  This is a deliberate
+// trade-off: MLIR natively supports arbitrary string attributes, and the small
+// set of valid values (trap/wrap/saturate) is validated at the contract parser
+// and WhyML emitter levels.  A formal enum would provide compile-time safety
+// but would require more TableGen infrastructure.
+
+def Arc_CastOp : Arc_Op<"cast", [Pure]> {
+  let summary = "Explicit integer type cast";
+  let description = [{
+    Explicitly casts an integer value to a different integer type.
+    Supports widening (i8->i32), narrowing (i32->i8), and sign-change (i32->u32).
+    Assembly format: arc.cast %x : !arc.int<32, true> to !arc.int<8, true>
+    Inherits overflow mode from context via optional "overflow" string attribute.
+  }];
+  let arguments = (ins AnyType:$input);
+  let results = (outs AnyType:$result);
+  let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // Comparison operation
 //===----------------------------------------------------------------------===//
 

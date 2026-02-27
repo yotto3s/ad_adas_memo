@@ -37,6 +37,27 @@ mlir::ParseResult parseBinaryOp(mlir::OpAsmParser& parser,
   return mlir::success();
 }
 
+mlir::ParseResult parseOptionalTypedOperand(mlir::OpAsmParser& parser,
+                                            mlir::OperationState& result) {
+  mlir::OpAsmParser::UnresolvedOperand operand;
+  mlir::Type type;
+  if (parser.parseOptionalOperand(operand).has_value()) {
+    if (parser.parseColonType(type) ||
+        parser.resolveOperand(operand, type, result.operands)) {
+      return mlir::failure();
+    }
+  }
+  return mlir::success();
+}
+
+void printOptionalElseClause(mlir::OpAsmPrinter& printer,
+                             mlir::Region& elseRegion) {
+  if (!elseRegion.empty()) {
+    printer << " else ";
+    printer.printRegion(elseRegion);
+  }
+}
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -120,6 +141,30 @@ mlir::ParseResult RemOp::parse(mlir::OpAsmParser& p, mlir::OperationState& r) {
   return parseBinaryOp(p, r);
 }
 void RemOp::print(mlir::OpAsmPrinter& p) { printBinaryOp(p, *this); }
+
+//===----------------------------------------------------------------------===//
+// CastOp custom assembly format
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult CastOp::parse(mlir::OpAsmParser& parser,
+                                mlir::OperationState& result) {
+  // Parse: arc.cast %x : <inputType> to <resultType>
+  mlir::OpAsmParser::UnresolvedOperand operand;
+  mlir::Type inputType;
+  mlir::Type resultType;
+  if (parser.parseOperand(operand) || parser.parseColonType(inputType) ||
+      parser.parseKeyword("to") || parser.parseType(resultType) ||
+      parser.resolveOperand(operand, inputType, result.operands)) {
+    return mlir::failure();
+  }
+  result.addTypes(resultType);
+  return mlir::success();
+}
+
+void CastOp::print(mlir::OpAsmPrinter& printer) {
+  printer << " " << getInput() << " : " << getInput().getType() << " to "
+          << getResult().getType();
+}
 
 //===----------------------------------------------------------------------===//
 // CmpOp custom assembly format
@@ -212,13 +257,8 @@ void AssignOp::print(mlir::OpAsmPrinter& printer) {
 
 mlir::ParseResult ReturnOp::parse(mlir::OpAsmParser& parser,
                                   mlir::OperationState& result) {
-  mlir::OpAsmParser::UnresolvedOperand operand;
-  mlir::Type type;
-  if (parser.parseOptionalOperand(operand).has_value()) {
-    if (parser.parseColonType(type) ||
-        parser.resolveOperand(operand, type, result.operands)) {
-      return mlir::failure();
-    }
+  if (parseOptionalTypedOperand(parser, result)) {
+    return mlir::failure();
   }
   return parser.parseOptionalAttrDict(result.attributes);
 }
@@ -245,8 +285,5 @@ void IfOp::print(mlir::OpAsmPrinter& printer) {
   printer << " " << getCondition();
   printer << " ";
   printer.printRegion(getThenRegion());
-  if (!getElseRegion().empty()) {
-    printer << " else ";
-    printer.printRegion(getElseRegion());
-  }
+  printOptionalElseClause(printer, getElseRegion());
 }

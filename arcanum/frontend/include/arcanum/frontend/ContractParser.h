@@ -87,6 +87,7 @@ struct ContractExpr {
 struct ContractInfo {
   std::vector<ContractExprPtr> preconditions;
   std::vector<ContractExprPtr> postconditions;
+  std::string overflowMode = "trap";
 };
 
 /// Parse //@ requires: and //@ ensures: annotations from raw comments,
