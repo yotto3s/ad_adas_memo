@@ -1160,5 +1160,145 @@ TEST_F(WhyMLEmitterSlice2Test, UnsignedToSignedSameWidthCastAssertsRange) {
       << result->whymlText;
 }
 
+// --- Slice 3: Loop emission tests ---
+
+TEST(WhyMLEmitterTest, EmitsForLoopAsRecursiveFunction) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n >= 0 && n <= 1000
+    //@ ensures: \result >= 0
+    int32_t sum_to_n(int32_t n) {
+      int32_t sum = 0;
+      //@ loop_invariant: sum >= 0 && i >= 0 && i <= n
+      //@ loop_variant: n - i
+      //@ loop_assigns: i, sum
+      for (int32_t i = 0; i < n; i = i + 1) {
+        sum = sum + i;
+      }
+      return sum;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("let rec"), std::string::npos)
+      << "Should emit a recursive function for the loop";
+  EXPECT_NE(result->whymlText.find("requires"), std::string::npos)
+      << "Should emit loop invariant as requires clause";
+  EXPECT_NE(result->whymlText.find("variant"), std::string::npos)
+      << "Should emit loop variant clause";
+  EXPECT_NE(result->whymlText.find("module"), std::string::npos);
+  EXPECT_NE(result->whymlText.find("end"), std::string::npos);
+}
+
+TEST(WhyMLEmitterTest, EmitsWhileLoopAsRecursiveFunction) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: x > 0
+    //@ ensures: \result >= 0
+    int32_t halve_to_zero(int32_t x) {
+      //@ loop_invariant: x >= 0
+      //@ loop_variant: x
+      //@ loop_assigns: x
+      while (x > 0) {
+        x = x / 2;
+      }
+      return x;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("let rec"), std::string::npos);
+  EXPECT_NE(result->whymlText.find("variant"), std::string::npos);
+}
+
+TEST(WhyMLEmitterTest, EmitsDoWhileLoopAsRecursiveFunction) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: x > 0 && x <= 1000
+    //@ ensures: \result >= 1
+    int32_t count_digits(int32_t x) {
+      int32_t count = 0;
+      //@ loop_invariant: count >= 0 && x >= 0
+      //@ loop_variant: x
+      //@ loop_assigns: x, count
+      do {
+        x = x / 10;
+        count = count + 1;
+      } while (x > 0);
+      return count;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("let rec"), std::string::npos);
+}
+
+TEST(WhyMLEmitterTest, EmitsBreakAsEarlyReturn) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n > 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t find_first_even(int32_t n) {
+      int32_t result = 0;
+      //@ loop_invariant: i >= 0 && i <= n
+      //@ loop_assigns: i, result
+      for (int32_t i = 0; i < n; i = i + 1) {
+        if (i % 2 == 0) {
+          result = i;
+          break;
+        }
+      }
+      return result;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("let rec"), std::string::npos);
+}
+
 } // namespace
 } // namespace arcanum
