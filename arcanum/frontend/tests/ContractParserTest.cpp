@@ -699,5 +699,67 @@ TEST(ContractParserTest, OverflowModeInvalidWarns) {
   EXPECT_TRUE(contracts.empty());
 }
 
+// ---------------------------------------------------------------------------
+// Loop annotation parsing tests (Slice 3)
+// ---------------------------------------------------------------------------
+
+TEST(ContractParserTest, ParsesLoopInvariantAnnotation) {
+  auto lines =
+      arcanum::extractAnnotationLines("//@ loop_invariant: x >= 0 && x <= n\n");
+  ASSERT_EQ(lines.size(), 1u);
+  EXPECT_EQ(lines[0], "loop_invariant: x >= 0 && x <= n");
+}
+
+TEST(ContractParserTest, ParsesLoopVariantAnnotation) {
+  auto lines = arcanum::extractAnnotationLines("//@ loop_variant: n - i\n");
+  ASSERT_EQ(lines.size(), 1u);
+  EXPECT_EQ(lines[0], "loop_variant: n - i");
+}
+
+TEST(ContractParserTest, ParsesLoopAssignsAnnotation) {
+  auto lines = arcanum::extractAnnotationLines("//@ loop_assigns: i, sum\n");
+  ASSERT_EQ(lines.size(), 1u);
+  EXPECT_EQ(lines[0], "loop_assigns: i, sum");
+}
+
+TEST(ContractParserTest, ParsesLabelAnnotation) {
+  auto lines = arcanum::extractAnnotationLines("//@ label: outer\n");
+  ASSERT_EQ(lines.size(), 1u);
+  EXPECT_EQ(lines[0], "label: outer");
+}
+
+TEST(ContractParserTest, ParsesMultipleLoopInvariantsConjoin) {
+  LoopContractInfo info;
+  std::vector<std::string> lines = {
+      "loop_invariant: x >= 0",
+      "loop_invariant: x <= n",
+  };
+  for (const auto& line : lines) {
+    applyLoopAnnotationLine(llvm::StringRef(line), info);
+  }
+  EXPECT_EQ(info.invariant, "x >= 0 && x <= n");
+}
+
+TEST(ContractParserTest, ParsesLoopVariantSingleExpr) {
+  LoopContractInfo info;
+  applyLoopAnnotationLine("loop_variant: n - i", info);
+  EXPECT_EQ(info.variant, "n - i");
+}
+
+TEST(ContractParserTest, ParsesLoopAssignsCommaSeparated) {
+  LoopContractInfo info;
+  applyLoopAnnotationLine("loop_assigns: i, sum, count", info);
+  ASSERT_EQ(info.assigns.size(), 3u);
+  EXPECT_EQ(info.assigns[0], "i");
+  EXPECT_EQ(info.assigns[1], "sum");
+  EXPECT_EQ(info.assigns[2], "count");
+}
+
+TEST(ContractParserTest, ParsesLoopLabel) {
+  LoopContractInfo info;
+  applyLoopAnnotationLine("label: outer", info);
+  EXPECT_EQ(info.label, "outer");
+}
+
 } // namespace
 } // namespace arcanum
