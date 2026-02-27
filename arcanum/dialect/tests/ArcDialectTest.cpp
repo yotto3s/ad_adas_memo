@@ -511,5 +511,100 @@ TEST_F(ArcDialectTest, IntTypeVerifyRejectsInvalidWidth) {
   context_.getDiagEngine().eraseHandler(diagHandler);
 }
 
+// ============================================================
+// Loop operations (Slice 3)
+// ============================================================
+
+TEST_F(ArcDialectTest, LoopOpCreationForLoop) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
+  loopOp->setAttr("condition_first", builder_->getBoolAttr(true));
+  loopOp->setAttr("invariant", builder_->getStringAttr("i >= 0 && i <= n"));
+  loopOp->setAttr("variant", builder_->getStringAttr("n - i"));
+  loopOp->setAttr("assigns", builder_->getStringAttr("i, sum"));
+
+  EXPECT_TRUE(loopOp);
+  auto condFirst = loopOp->getAttrOfType<mlir::BoolAttr>("condition_first");
+  ASSERT_TRUE(condFirst);
+  EXPECT_TRUE(condFirst.getValue());
+
+  auto inv = loopOp->getAttrOfType<mlir::StringAttr>("invariant");
+  ASSERT_TRUE(inv);
+  EXPECT_EQ(inv.getValue(), "i >= 0 && i <= n");
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, LoopOpCreationDoWhile) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
+  loopOp->setAttr("condition_first", builder_->getBoolAttr(false));
+
+  auto condFirst = loopOp->getAttrOfType<mlir::BoolAttr>("condition_first");
+  ASSERT_TRUE(condFirst);
+  EXPECT_FALSE(condFirst.getValue());
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, BreakOpCreation) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto breakOp = builder_->create<arc::BreakOp>(builder_->getUnknownLoc());
+  EXPECT_TRUE(breakOp);
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, ContinueOpCreation) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto continueOp =
+      builder_->create<arc::ContinueOp>(builder_->getUnknownLoc());
+  EXPECT_TRUE(continueOp);
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, ConditionOpCreation) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto boolType = arc::BoolType::get(&context_);
+  auto cond = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), boolType, builder_->getBoolAttr(true));
+  auto condOp = builder_->create<arc::ConditionOp>(builder_->getUnknownLoc(),
+                                                   cond.getResult());
+  EXPECT_TRUE(condOp);
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, YieldOpCreation) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto yieldOp = builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
+  EXPECT_TRUE(yieldOp);
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, LoopOpHasFourRegions) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
+  EXPECT_EQ(loopOp->getNumRegions(), 4u);
+
+  module->destroy();
+}
+
 } // namespace
 } // namespace arcanum

@@ -183,4 +183,58 @@ def Arc_IfOp : Arc_Op<"if"> {
   let hasCustomAssemblyFormat = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// Loop operations (Slice 3)
+//===----------------------------------------------------------------------===//
+
+def Arc_LoopOp : Arc_Op<"loop"> {
+  let summary = "Loop operation covering for/while/do-while";
+  let description = [{
+    Single loop operation with four optional regions (init, cond, update, body).
+    Attributes encode loop contracts and loop kind (condition_first flag).
+    For loops populate all four regions; while/do-while use cond + body only.
+  }];
+
+  let regions = (region
+    AnyRegion:$initRegion,
+    AnyRegion:$condRegion,
+    AnyRegion:$updateRegion,
+    AnyRegion:$bodyRegion
+  );
+
+  let hasCustomAssemblyFormat = 1;
+}
+
+def Arc_BreakOp : Arc_Op<"break", [Terminator]> {
+  let summary = "Early loop exit";
+  let description = [{
+    Terminates the current loop iteration and exits the loop.
+    Valid only inside an arc.loop body region.
+  }];
+  let hasCustomAssemblyFormat = 1;
+}
+
+def Arc_ContinueOp : Arc_Op<"continue", [Terminator]> {
+  let summary = "Skip to next loop iteration";
+  let description = [{
+    Skips the remaining body and proceeds to the next iteration.
+    Valid only inside an arc.loop body region.
+  }];
+  let hasCustomAssemblyFormat = 1;
+}
+
+def Arc_ConditionOp : Arc_Op<"condition", [Terminator]> {
+  let summary = "Loop condition terminator";
+  let description = [{
+    Terminates the cond region of an arc.loop with a boolean condition value.
+  }];
+  let arguments = (ins AnyType:$condition);
+  let hasCustomAssemblyFormat = 1;
+}
+
+def Arc_YieldOp : Arc_Op<"yield", [Terminator]> {
+  let summary = "Region terminator for loop init, update, and body";
+  let hasCustomAssemblyFormat = 1;
+}
+
 #endif // ARC_OPS_TD
