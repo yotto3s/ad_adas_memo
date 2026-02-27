@@ -3,10 +3,12 @@
 #include "arcanum/dialect/ArcDialect.h"
 #include "arcanum/dialect/ArcOps.h"
 #include "arcanum/dialect/ArcTypes.h"
+#include "arcanum/frontend/ContractParser.h"
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/RawCommentList.h"
 #include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceManager.h"
 
@@ -325,6 +327,163 @@ private:
     }
   }
 
+  // --- Loop lowering helpers (Slice 3) ---
+
+  /// Collect loop annotation lines from comments preceding a Stmt location.
+  /// Scans all comments in the same file and selects those ending within 10
+  /// lines before the statement.
+  LoopContractInfo collectLoopAnnotations(clang::SourceLocation stmtLoc) {
+    LoopContractInfo loopInfo;
+    if (!stmtLoc.isValid()) {
+      return loopInfo;
+    }
+    auto& sm = astCtx.getSourceManager();
+    auto fileId = sm.getFileID(stmtLoc);
+    auto* commentsMap = astCtx.Comments.getCommentsInFile(fileId);
+    if (commentsMap == nullptr) {
+      return loopInfo;
+    }
+    unsigned stmtBeginLine = sm.getPresumedLineNumber(stmtLoc);
+    constexpr unsigned MAX_ANNOTATION_DISTANCE = 10;
+    for (const auto& [offset, comment] : *commentsMap) {
+      auto commentEnd = comment->getEndLoc();
+      if (!commentEnd.isValid()) {
+        continue;
+      }
+      if (!sm.isBeforeInTranslationUnit(commentEnd, stmtLoc)) {
+        continue;
+      }
+      unsigned commentEndLine = sm.getPresumedLineNumber(commentEnd);
+      if (stmtBeginLine - commentEndLine > MAX_ANNOTATION_DISTANCE) {
+        continue;
+      }
+      auto rawText = comment->getRawText(sm);
+      auto annotationLines = extractAnnotationLines(rawText);
+      for (const auto& line : annotationLines) {
+        llvm::StringRef lineRef(line);
+        if (lineRef.starts_with("loop_") || lineRef.starts_with("label:")) {
+          applyLoopAnnotationLine(lineRef, loopInfo);
+        }
+      }
+    }
+    return loopInfo;
+  }
+
+  /// Attach loop contract attributes (invariant, variant, assigns, label)
+  /// from a LoopContractInfo onto an arc.loop operation.
+  void attachLoopContractAttrs(arc::LoopOp loopOp,
+                               const LoopContractInfo& loopInfo) {
+    if (!loopInfo.invariant.empty()) {
+      loopOp->setAttr("invariant", builder.getStringAttr(loopInfo.invariant));
+    }
+    if (!loopInfo.variant.empty()) {
+      loopOp->setAttr("variant", builder.getStringAttr(loopInfo.variant));
+    }
+    if (!loopInfo.assigns.empty()) {
+      std::string assignsStr;
+      for (size_t i = 0; i < loopInfo.assigns.size(); ++i) {
+        if (i > 0) {
+          assignsStr += ", ";
+        }
+        assignsStr += loopInfo.assigns[i];
+      }
+      loopOp->setAttr("assigns", builder.getStringAttr(assignsStr));
+    }
+    if (!loopInfo.label.empty()) {
+      loopOp->setAttr("label", builder.getStringAttr(loopInfo.label));
+    }
+  }
+
+  /// Lower a condition expression into a region, terminating with
+  /// arc.condition.
+  void lowerCondIntoRegion(mlir::Region& region, const clang::Expr* condExpr,
+                           ValueMap& valueMap) {
+    auto& block = region.emplaceBlock();
+    auto savedIp = builder.saveInsertionPoint();
+    builder.setInsertionPointToEnd(&block);
+    auto condVal = lowerExpr(condExpr, valueMap);
+    if (condVal) {
+      builder.create<arc::ConditionOp>(getLoc(condExpr->getBeginLoc()),
+                                       *condVal);
+    }
+    builder.restoreInsertionPoint(savedIp);
+  }
+
+  /// Append an arc.yield terminator to the last block in a region, if the
+  /// region is non-empty and the last operation is not already a terminator.
+  void appendYieldTerminator(mlir::Region& region) {
+    if (region.empty()) {
+      return;
+    }
+    auto& block = region.back();
+    if (block.empty() ||
+        !block.back().hasTrait<mlir::OpTrait::IsTerminator>()) {
+      auto savedIp = builder.saveInsertionPoint();
+      builder.setInsertionPointToEnd(&block);
+      builder.create<arc::YieldOp>(builder.getUnknownLoc());
+      builder.restoreInsertionPoint(savedIp);
+    }
+  }
+
+  void lowerForStmt(const clang::ForStmt* forStmt, ValueMap& valueMap) {
+    auto loc = getLoc(forStmt->getForLoc());
+    auto loopInfo = collectLoopAnnotations(forStmt->getForLoc());
+
+    auto loopOp = builder.create<arc::LoopOp>(loc);
+    loopOp->setAttr("condition_first", builder.getBoolAttr(true));
+    attachLoopContractAttrs(loopOp, loopInfo);
+
+    if (forStmt->getInit()) {
+      lowerStmtIntoRegion(loopOp.getInitRegion(), forStmt->getInit(), valueMap);
+      appendYieldTerminator(loopOp.getInitRegion());
+    }
+    if (forStmt->getCond()) {
+      lowerCondIntoRegion(loopOp.getCondRegion(), forStmt->getCond(), valueMap);
+    }
+    if (forStmt->getInc()) {
+      lowerStmtIntoRegion(loopOp.getUpdateRegion(), forStmt->getInc(),
+                          valueMap);
+      appendYieldTerminator(loopOp.getUpdateRegion());
+    }
+    if (forStmt->getBody()) {
+      lowerStmtIntoRegion(loopOp.getBodyRegion(), forStmt->getBody(), valueMap);
+      appendYieldTerminator(loopOp.getBodyRegion());
+    }
+  }
+
+  void lowerWhileStmt(const clang::WhileStmt* whileStmt, ValueMap& valueMap) {
+    auto loc = getLoc(whileStmt->getWhileLoc());
+    auto loopInfo = collectLoopAnnotations(whileStmt->getWhileLoc());
+
+    auto loopOp = builder.create<arc::LoopOp>(loc);
+    loopOp->setAttr("condition_first", builder.getBoolAttr(true));
+    attachLoopContractAttrs(loopOp, loopInfo);
+
+    lowerCondIntoRegion(loopOp.getCondRegion(), whileStmt->getCond(), valueMap);
+
+    if (whileStmt->getBody()) {
+      lowerStmtIntoRegion(loopOp.getBodyRegion(), whileStmt->getBody(),
+                          valueMap);
+      appendYieldTerminator(loopOp.getBodyRegion());
+    }
+  }
+
+  void lowerDoStmt(const clang::DoStmt* doStmt, ValueMap& valueMap) {
+    auto loc = getLoc(doStmt->getDoLoc());
+    auto loopInfo = collectLoopAnnotations(doStmt->getDoLoc());
+
+    auto loopOp = builder.create<arc::LoopOp>(loc);
+    loopOp->setAttr("condition_first", builder.getBoolAttr(false));
+    attachLoopContractAttrs(loopOp, loopInfo);
+
+    lowerCondIntoRegion(loopOp.getCondRegion(), doStmt->getCond(), valueMap);
+
+    if (doStmt->getBody()) {
+      lowerStmtIntoRegion(loopOp.getBodyRegion(), doStmt->getBody(), valueMap);
+      appendYieldTerminator(loopOp.getBodyRegion());
+    }
+  }
+
   // Finding 3d: Lower an assignment expression statement.
   void lowerAssignmentExpr(const clang::BinaryOperator* binOp,
                            ValueMap& valueMap) {
@@ -355,6 +514,16 @@ private:
       lowerDeclStmt(declStmt, valueMap);
     } else if (const auto* ifStmt = llvm::dyn_cast<clang::IfStmt>(stmt)) {
       lowerIfStmt(ifStmt, valueMap);
+    } else if (const auto* forStmt = llvm::dyn_cast<clang::ForStmt>(stmt)) {
+      lowerForStmt(forStmt, valueMap);
+    } else if (const auto* whileStmt = llvm::dyn_cast<clang::WhileStmt>(stmt)) {
+      lowerWhileStmt(whileStmt, valueMap);
+    } else if (const auto* doStmt = llvm::dyn_cast<clang::DoStmt>(stmt)) {
+      lowerDoStmt(doStmt, valueMap);
+    } else if (llvm::isa<clang::BreakStmt>(stmt)) {
+      builder.create<arc::BreakOp>(getLoc(stmt->getBeginLoc()));
+    } else if (llvm::isa<clang::ContinueStmt>(stmt)) {
+      builder.create<arc::ContinueOp>(getLoc(stmt->getBeginLoc()));
     } else if (const auto* exprStmt = llvm::dyn_cast<clang::Expr>(stmt)) {
       // Handle assignment expressions (e.g., x = expr)
       const auto* pureExpr = exprStmt->IgnoreParenImpCasts();

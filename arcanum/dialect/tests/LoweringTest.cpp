@@ -558,5 +558,159 @@ TEST_F(LoweringTestFixture, CastOpInWrapModeGetsOverflowAttr) {
   EXPECT_TRUE(foundCast);
 }
 
+// --- Slice 3: Loop lowering tests ---
+
+TEST_F(LoweringTestFixture, LowersForLoopToArcLoop) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n >= 0 && n <= 1000
+    //@ ensures: \result >= 0
+    int32_t sum_to_n(int32_t n) {
+      int32_t sum = 0;
+      //@ loop_invariant: sum >= 0
+      //@ loop_invariant: i >= 0 && i <= n
+      //@ loop_assigns: i, sum
+      for (int32_t i = 0; i < n; i = i + 1) {
+        sum = sum + i;
+      }
+      return sum;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundLoop = false;
+  module->walk([&](arc::LoopOp loopOp) {
+    foundLoop = true;
+    auto condFirst = loopOp->getAttrOfType<mlir::BoolAttr>("condition_first");
+    ASSERT_TRUE(condFirst);
+    EXPECT_TRUE(condFirst.getValue());
+    EXPECT_FALSE(loopOp.getInitRegion().empty());
+    EXPECT_FALSE(loopOp.getCondRegion().empty());
+    EXPECT_FALSE(loopOp.getUpdateRegion().empty());
+    EXPECT_FALSE(loopOp.getBodyRegion().empty());
+    auto inv = loopOp->getAttrOfType<mlir::StringAttr>("invariant");
+    ASSERT_TRUE(inv);
+    EXPECT_NE(inv.getValue().str().find("sum >= 0"), std::string::npos);
+  });
+  EXPECT_TRUE(foundLoop);
+}
+
+TEST_F(LoweringTestFixture, LowersWhileLoopToArcLoop) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: x > 0
+    //@ ensures: \result >= 0
+    int32_t halve(int32_t x) {
+      //@ loop_invariant: x >= 0
+      //@ loop_variant: x
+      //@ loop_assigns: x
+      while (x > 0) {
+        x = x / 2;
+      }
+      return x;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundLoop = false;
+  module->walk([&](arc::LoopOp loopOp) {
+    foundLoop = true;
+    auto condFirst = loopOp->getAttrOfType<mlir::BoolAttr>("condition_first");
+    ASSERT_TRUE(condFirst);
+    EXPECT_TRUE(condFirst.getValue());
+    EXPECT_TRUE(loopOp.getInitRegion().empty());
+    EXPECT_FALSE(loopOp.getCondRegion().empty());
+    EXPECT_TRUE(loopOp.getUpdateRegion().empty());
+    EXPECT_FALSE(loopOp.getBodyRegion().empty());
+  });
+  EXPECT_TRUE(foundLoop);
+}
+
+TEST_F(LoweringTestFixture, LowersDoWhileLoopToArcLoop) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: x > 0 && x <= 1000
+    //@ ensures: \result >= 1
+    int32_t count_digits(int32_t x) {
+      int32_t count = 0;
+      //@ loop_invariant: count >= 0 && x >= 0
+      //@ loop_variant: x
+      //@ loop_assigns: x, count
+      do {
+        x = x / 10;
+        count = count + 1;
+      } while (x > 0);
+      return count;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundLoop = false;
+  module->walk([&](arc::LoopOp loopOp) {
+    foundLoop = true;
+    auto condFirst = loopOp->getAttrOfType<mlir::BoolAttr>("condition_first");
+    ASSERT_TRUE(condFirst);
+    EXPECT_FALSE(condFirst.getValue());
+  });
+  EXPECT_TRUE(foundLoop);
+}
+
+TEST_F(LoweringTestFixture, LowersBreakStatementToArcBreak) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n > 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t find_even(int32_t n) {
+      int32_t result = 0;
+      //@ loop_invariant: i >= 0 && i <= n
+      //@ loop_assigns: i, result
+      for (int32_t i = 0; i < n; i = i + 1) {
+        if (i % 2 == 0) {
+          result = i;
+          break;
+        }
+      }
+      return result;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundBreak = false;
+  module->walk([&](arc::BreakOp) { foundBreak = true; });
+  EXPECT_TRUE(foundBreak);
+}
+
 } // namespace
 } // namespace arcanum
