@@ -39,6 +39,7 @@ static cl::opt<int> timeout("timeout",
                             cl::cat(arcanumCategory));
 
 static bool validateSourceFilesExist(const std::vector<std::string>& files) {
+  // NOLINTNEXTLINE(readability-use-anyofallof)
   for (const auto& file : files) {
     if (!llvm::sys::fs::exists(file)) {
       llvm::errs() << "error: file not found: " << file << "\n";

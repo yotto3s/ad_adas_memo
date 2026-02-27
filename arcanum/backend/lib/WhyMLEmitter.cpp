@@ -135,7 +135,7 @@ std::string contractToWhyML(llvm::StringRef contract) {
 }
 
 /// Convert snake_case to CamelCase (capitalize each word after '_').
-static std::string snakeToCamelCase(llvm::StringRef name) {
+std::string snakeToCamelCase(llvm::StringRef name) {
   std::string camel;
   bool nextUpper = true;
   for (char c : name) {

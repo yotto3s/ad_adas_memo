@@ -38,12 +38,8 @@ std::string resolveObligationFuncName(const ObligationResult& ob,
 
 bool obligationsHavePerFunctionNames(
     const std::vector<ObligationResult>& obligations) {
-  for (const auto& ob : obligations) {
-    if (!ob.functionName.empty()) {
-      return true;
-    }
-  }
-  return false;
+  return std::ranges::any_of(
+      obligations, [](const auto& ob) { return !ob.functionName.empty(); });
 }
 
 std::string

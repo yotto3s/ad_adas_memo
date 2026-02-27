@@ -103,14 +103,16 @@ private:
 
   // --- Predicates ---
 
-  bool atOpenParen() const { return pos < text.size() && text[pos] == '('; }
+  [[nodiscard]] bool atOpenParen() const {
+    return pos < text.size() && text[pos] == '(';
+  }
 
-  bool atDigit() const {
+  [[nodiscard]] bool atDigit() const {
     return pos < text.size() &&
            (std::isdigit(static_cast<unsigned char>(text[pos])) != 0);
   }
 
-  bool atIdentStart() const {
+  [[nodiscard]] bool atIdentStart() const {
     return pos < text.size() &&
            ((std::isalpha(static_cast<unsigned char>(text[pos])) != 0) ||
             text[pos] == '_');
