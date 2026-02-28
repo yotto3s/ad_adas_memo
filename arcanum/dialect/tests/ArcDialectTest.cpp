@@ -13,6 +13,7 @@
 #include <functional>
 #include <string>
 #include <tuple>
+#include <vector>
 
 namespace arcanum {
 namespace {
@@ -83,7 +84,6 @@ TEST_F(ArcDialectTest, IntTypeBoundsAllVariants) {
 
 TEST_F(ArcDialectTest, IntTypeI32BackwardCompatible) {
   auto type = arc::IntType::get(&context_, 32, true);
-  // Same type instance should be returned (uniqued by MLIR context)
   auto type2 = arc::IntType::get(&context_, 32, true);
   EXPECT_EQ(type, type2);
 }
@@ -315,62 +315,76 @@ TEST_F(ArcDialectTest, AddOpWithU16Type) {
   module->destroy();
 }
 
-// --- Task 2: CastOp tests ---
+// --- B2: CastOp type-pair tests (parameterized) ---
 
-TEST_F(ArcDialectTest, CastOpWideningI8ToI32) {
+struct CastOpParam {
+  const char* name;
+  unsigned srcW;
+  bool srcS;
+  unsigned dstW;
+  bool dstS;
+};
+
+class CastOpParamTest : public ::testing::TestWithParam<CastOpParam> {
+protected:
+  void SetUp() override {
+    context_.getOrLoadDialect<arc::ArcDialect>();
+    builder_ = std::make_unique<mlir::OpBuilder>(&context_);
+  }
+
+  mlir::MLIRContext context_;
+  std::unique_ptr<mlir::OpBuilder> builder_;
+};
+
+TEST_P(CastOpParamTest, CastOpTypePair) {
+  auto [name, srcW, srcS, dstW, dstS] = GetParam();
+
   auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
   builder_->setInsertionPointToEnd(module.getBody());
 
-  auto i8Type = arc::IntType::get(&context_, 8, true);
-  auto i32Type = arc::IntType::get(&context_, 32, true);
+  auto srcType = arc::IntType::get(&context_, srcW, srcS);
+  auto dstType = arc::IntType::get(&context_, dstW, dstS);
   auto src = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i8Type, builder_->getI8IntegerAttr(42));
+      builder_->getUnknownLoc(), srcType, builder_->getI32IntegerAttr(5));
   auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(),
-                                              i32Type, src.getResult());
+                                              dstType, src.getResult());
 
   EXPECT_TRUE(castOp);
-  EXPECT_EQ(castOp.getInput().getType(), i8Type);
-  EXPECT_EQ(castOp.getResult().getType(), i32Type);
+  EXPECT_EQ(castOp.getInput().getType(), srcType);
+  EXPECT_EQ(castOp.getResult().getType(), dstType);
   module->destroy();
 }
 
-TEST_F(ArcDialectTest, CastOpNarrowingI32ToI8) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
+INSTANTIATE_TEST_SUITE_P(
+    ArcDialect, CastOpParamTest,
+    ::testing::Values(CastOpParam{"WideningI8ToI32", 8, true, 32, true},
+                      CastOpParam{"NarrowingI32ToI8", 32, true, 8, true},
+                      CastOpParam{"SignChangeI32ToU32", 32, true, 32, false}),
+    [](const ::testing::TestParamInfo<CastOpParam>& info) {
+      return info.param.name;
+    });
 
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto i8Type = arc::IntType::get(&context_, 8, true);
-  auto src = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(100));
-  auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(), i8Type,
-                                              src.getResult());
+// --- B1: AddOp overflow attribute tests (parameterized) ---
 
-  EXPECT_TRUE(castOp);
-  EXPECT_EQ(castOp.getInput().getType(), i32Type);
-  EXPECT_EQ(castOp.getResult().getType(), i8Type);
-  module->destroy();
-}
+struct AddOpOverflowParam {
+  const char* name;
+  const char* overflowValue;
+};
 
-TEST_F(ArcDialectTest, CastOpSignChangeI32ToU32) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
+class AddOpOverflowTest : public ::testing::TestWithParam<AddOpOverflowParam> {
+protected:
+  void SetUp() override {
+    context_.getOrLoadDialect<arc::ArcDialect>();
+    builder_ = std::make_unique<mlir::OpBuilder>(&context_);
+  }
 
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto u32Type = arc::IntType::get(&context_, 32, false);
-  auto src = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(5));
-  auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(),
-                                              u32Type, src.getResult());
+  mlir::MLIRContext context_;
+  std::unique_ptr<mlir::OpBuilder> builder_;
+};
 
-  EXPECT_TRUE(castOp);
-  EXPECT_EQ(castOp.getInput().getType(), i32Type);
-  EXPECT_EQ(castOp.getResult().getType(), u32Type);
-  module->destroy();
-}
+TEST_P(AddOpOverflowTest, SetsAndRetrievesOverflowAttribute) {
+  auto [name, overflowValue] = GetParam();
 
-// --- Task 3: Overflow mode string attribute tests ---
-
-TEST_F(ArcDialectTest, AddOpWithOverflowWrapAttribute) {
   auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
   builder_->setInsertionPointToEnd(module.getBody());
 
@@ -382,34 +396,21 @@ TEST_F(ArcDialectTest, AddOpWithOverflowWrapAttribute) {
   auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), i32Type,
                                             lhs, rhs);
 
-  // MLIR supports arbitrary attributes natively; attach overflow mode.
-  addOp->setAttr("overflow", builder_->getStringAttr("wrap"));
+  addOp->setAttr("overflow", builder_->getStringAttr(overflowValue));
   auto attr = addOp->getAttrOfType<mlir::StringAttr>("overflow");
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr.getValue(), "wrap");
+  EXPECT_EQ(attr.getValue(), overflowValue);
 
   module->destroy();
 }
 
-TEST_F(ArcDialectTest, AddOpWithOverflowSaturateAttribute) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
-
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto lhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(1));
-  auto rhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(2));
-  auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), i32Type,
-                                            lhs, rhs);
-
-  addOp->setAttr("overflow", builder_->getStringAttr("saturate"));
-  auto attr = addOp->getAttrOfType<mlir::StringAttr>("overflow");
-  ASSERT_TRUE(attr);
-  EXPECT_EQ(attr.getValue(), "saturate");
-
-  module->destroy();
-}
+INSTANTIATE_TEST_SUITE_P(
+    ArcDialect, AddOpOverflowTest,
+    ::testing::Values(AddOpOverflowParam{"Wrap", "wrap"},
+                      AddOpOverflowParam{"Saturate", "saturate"}),
+    [](const ::testing::TestParamInfo<AddOpOverflowParam>& info) {
+      return info.param.name;
+    });
 
 TEST_F(ArcDialectTest, FuncOpWithOverflowTrapAttribute) {
   auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
@@ -442,7 +443,6 @@ TEST_F(ArcDialectTest, MulOpAbsentOverflowAttributeIsNull) {
   auto mulOp = builder_->create<arc::MulOp>(builder_->getUnknownLoc(), i32Type,
                                             lhs, rhs);
 
-  // No overflow attribute set; lookup should return null.
   auto attr = mulOp->getAttrOfType<mlir::StringAttr>("overflow");
   EXPECT_FALSE(attr);
 
@@ -450,10 +450,9 @@ TEST_F(ArcDialectTest, MulOpAbsentOverflowAttributeIsNull) {
 }
 
 // ============================================================
-// TC-12: Type print tests — verify dialect printer output
+// TC-12: Type print tests -- verify dialect printer output
 // ============================================================
 
-// Helper to print an MLIR type to string via the dialect printer.
 static std::string typeToString(mlir::Type type) {
   std::string str;
   llvm::raw_string_ostream os(str);
@@ -461,8 +460,6 @@ static std::string typeToString(mlir::Type type) {
   return str;
 }
 
-// Verify that all 8 integer type mnemonics print correctly through
-// ArcDialect::printType (invoked by type.print()).
 TEST_F(ArcDialectTest, IntTypePrintMnemonics) {
   EXPECT_EQ(typeToString(arc::IntType::get(&context_, 8, true)), "!arc.i8");
   EXPECT_EQ(typeToString(arc::IntType::get(&context_, 16, true)), "!arc.i16");
@@ -474,7 +471,6 @@ TEST_F(ArcDialectTest, IntTypePrintMnemonics) {
   EXPECT_EQ(typeToString(arc::IntType::get(&context_, 64, false)), "!arc.u64");
 }
 
-// Verify BoolType prints correctly.
 TEST_F(ArcDialectTest, BoolTypePrintMnemonic) {
   EXPECT_EQ(typeToString(arc::BoolType::get(&context_)), "!arc.bool");
 }
@@ -483,11 +479,7 @@ TEST_F(ArcDialectTest, BoolTypePrintMnemonic) {
 // TC-13: IntType width validation via verify()
 // ============================================================
 
-// Verify that IntType::verify() rejects unsupported widths and accepts valid
-// ones. This tests the same validation logic used by IntType::parse() and
-// IntType::getChecked().
 TEST_F(ArcDialectTest, IntTypeVerifyRejectsInvalidWidth) {
-  // Suppress diagnostics emitted by verify
   auto diagHandler = context_.getDiagEngine().registerHandler(
       [](mlir::Diagnostic&) { return mlir::success(); });
 
@@ -495,14 +487,12 @@ TEST_F(ArcDialectTest, IntTypeVerifyRejectsInvalidWidth) {
     return mlir::emitError(mlir::UnknownLoc::get(&context_));
   };
 
-  // Invalid widths should fail
   EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 0, true)));
   EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 1, true)));
   EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 12, true)));
   EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 24, false)));
   EXPECT_TRUE(mlir::failed(arc::IntType::verify(emitError, 128, true)));
 
-  // Valid widths should succeed (both signed and unsigned)
   EXPECT_TRUE(mlir::succeeded(arc::IntType::verify(emitError, 8, true)));
   EXPECT_TRUE(mlir::succeeded(arc::IntType::verify(emitError, 16, false)));
   EXPECT_TRUE(mlir::succeeded(arc::IntType::verify(emitError, 32, true)));
@@ -515,61 +505,94 @@ TEST_F(ArcDialectTest, IntTypeVerifyRejectsInvalidWidth) {
 // Loop operations (Slice 3)
 // ============================================================
 
-TEST_F(ArcDialectTest, LoopOpCreationForLoop) {
+// --- B6: LoopOp condition_first tests (parameterized) ---
+
+struct LoopConditionFirstParam {
+  const char* name;
+  bool conditionFirst;
+};
+
+class LoopConditionFirstTest
+    : public ::testing::TestWithParam<LoopConditionFirstParam> {
+protected:
+  void SetUp() override {
+    context_.getOrLoadDialect<arc::ArcDialect>();
+    builder_ = std::make_unique<mlir::OpBuilder>(&context_);
+  }
+
+  mlir::MLIRContext context_;
+  std::unique_ptr<mlir::OpBuilder> builder_;
+};
+
+TEST_P(LoopConditionFirstTest, SetsConditionFirstAttribute) {
+  auto [name, conditionFirst] = GetParam();
+
   auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
   builder_->setInsertionPointToEnd(module.getBody());
 
   auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
-  loopOp->setAttr("condition_first", builder_->getBoolAttr(true));
-  loopOp->setAttr("invariant", builder_->getStringAttr("i >= 0 && i <= n"));
-  loopOp->setAttr("variant", builder_->getStringAttr("n - i"));
-  loopOp->setAttr("assigns", builder_->getStringAttr("i, sum"));
+  loopOp->setAttr("condition_first", builder_->getBoolAttr(conditionFirst));
+
+  if (conditionFirst) {
+    loopOp->setAttr("invariant", builder_->getStringAttr("i >= 0 && i <= n"));
+    loopOp->setAttr("variant", builder_->getStringAttr("n - i"));
+    loopOp->setAttr("assigns", builder_->getStringAttr("i, sum"));
+  }
 
   EXPECT_TRUE(loopOp);
   auto condFirst = loopOp->getAttrOfType<mlir::BoolAttr>("condition_first");
   ASSERT_TRUE(condFirst);
-  EXPECT_TRUE(condFirst.getValue());
+  EXPECT_EQ(condFirst.getValue(), conditionFirst);
 
-  auto inv = loopOp->getAttrOfType<mlir::StringAttr>("invariant");
-  ASSERT_TRUE(inv);
-  EXPECT_EQ(inv.getValue(), "i >= 0 && i <= n");
-
-  module->destroy();
-}
-
-TEST_F(ArcDialectTest, LoopOpCreationDoWhile) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
-
-  auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
-  loopOp->setAttr("condition_first", builder_->getBoolAttr(false));
-
-  auto condFirst = loopOp->getAttrOfType<mlir::BoolAttr>("condition_first");
-  ASSERT_TRUE(condFirst);
-  EXPECT_FALSE(condFirst.getValue());
+  if (conditionFirst) {
+    auto inv = loopOp->getAttrOfType<mlir::StringAttr>("invariant");
+    ASSERT_TRUE(inv);
+    EXPECT_EQ(inv.getValue(), "i >= 0 && i <= n");
+  }
 
   module->destroy();
 }
 
-TEST_F(ArcDialectTest, BreakOpCreation) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
+INSTANTIATE_TEST_SUITE_P(
+    ArcDialect, LoopConditionFirstTest,
+    ::testing::Values(LoopConditionFirstParam{"ForLoop", true},
+                      LoopConditionFirstParam{"DoWhile", false}),
+    [](const ::testing::TestParamInfo<LoopConditionFirstParam>& info) {
+      return info.param.name;
+    });
 
-  auto breakOp = builder_->create<arc::BreakOp>(builder_->getUnknownLoc());
-  EXPECT_TRUE(breakOp);
+// --- B3: Simple zero-operand op creation tests (parameterized) ---
 
-  module->destroy();
-}
+TEST_F(ArcDialectTest, SimpleOpCreation) {
+  struct SimpleOpCase {
+    const char* name;
+    std::function<bool(mlir::OpBuilder&, mlir::Location)> create;
+  };
 
-TEST_F(ArcDialectTest, ContinueOpCreation) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
+  std::vector<SimpleOpCase> cases = {
+      {"BreakOp",
+       [](mlir::OpBuilder& b, mlir::Location loc) {
+         return static_cast<bool>(b.create<arc::BreakOp>(loc));
+       }},
+      {"ContinueOp",
+       [](mlir::OpBuilder& b, mlir::Location loc) {
+         return static_cast<bool>(b.create<arc::ContinueOp>(loc));
+       }},
+      {"YieldOp",
+       [](mlir::OpBuilder& b, mlir::Location loc) {
+         return static_cast<bool>(b.create<arc::YieldOp>(loc));
+       }},
+  };
 
-  auto continueOp =
-      builder_->create<arc::ContinueOp>(builder_->getUnknownLoc());
-  EXPECT_TRUE(continueOp);
+  for (const auto& tc : cases) {
+    SCOPED_TRACE(tc.name);
+    auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+    builder_->setInsertionPointToEnd(module.getBody());
 
-  module->destroy();
+    EXPECT_TRUE(tc.create(*builder_, builder_->getUnknownLoc()));
+
+    module->destroy();
+  }
 }
 
 TEST_F(ArcDialectTest, ConditionOpCreation) {
@@ -586,16 +609,6 @@ TEST_F(ArcDialectTest, ConditionOpCreation) {
   module->destroy();
 }
 
-TEST_F(ArcDialectTest, YieldOpCreation) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
-
-  auto yieldOp = builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
-  EXPECT_TRUE(yieldOp);
-
-  module->destroy();
-}
-
 TEST_F(ArcDialectTest, LoopOpHasFourRegions) {
   auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
   builder_->setInsertionPointToEnd(module.getBody());
@@ -607,8 +620,7 @@ TEST_F(ArcDialectTest, LoopOpHasFourRegions) {
 }
 
 // ---------------------------------------------------------------------------
-// [TC-10] LoopOp roundtrip test: create a LoopOp with all regions and
-// attributes, print to string, verify expected keywords appear.
+// [TC-10] LoopOp roundtrip test
 // ---------------------------------------------------------------------------
 
 TEST_F(ArcDialectTest, LoopOpPrintRoundtrip) {
@@ -638,14 +650,12 @@ TEST_F(ArcDialectTest, LoopOpPrintRoundtrip) {
   loopOp->setAttr("variant", builder_->getStringAttr("n - i"));
   loopOp->setAttr("assigns", builder_->getStringAttr("i"));
 
-  // Init region
   {
     auto& block = loopOp.getInitRegion().emplaceBlock();
     builder_->setInsertionPointToEnd(&block);
     builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
   }
 
-  // Cond region
   {
     auto& block = loopOp.getCondRegion().emplaceBlock();
     builder_->setInsertionPointToEnd(&block);
@@ -654,7 +664,6 @@ TEST_F(ArcDialectTest, LoopOpPrintRoundtrip) {
     builder_->create<arc::ConditionOp>(builder_->getUnknownLoc(), trueCond);
   }
 
-  // Body region
   {
     auto& block = loopOp.getBodyRegion().emplaceBlock();
     builder_->setInsertionPointToEnd(&block);
@@ -665,7 +674,6 @@ TEST_F(ArcDialectTest, LoopOpPrintRoundtrip) {
     builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
   }
 
-  // Update region
   {
     auto& block = loopOp.getUpdateRegion().emplaceBlock();
     builder_->setInsertionPointToEnd(&block);
@@ -676,12 +684,10 @@ TEST_F(ArcDialectTest, LoopOpPrintRoundtrip) {
   builder_->create<arc::ReturnOp>(builder_->getUnknownLoc(),
                                   entryBlock.getArgument(0));
 
-  // Print the module to string
   std::string printed;
   llvm::raw_string_ostream os(printed);
   module->print(os);
 
-  // Verify expected keywords appear in printed output
   EXPECT_NE(printed.find("arc.loop"), std::string::npos)
       << "Printed output should contain 'arc.loop'";
   EXPECT_NE(printed.find("condition_first"), std::string::npos)
