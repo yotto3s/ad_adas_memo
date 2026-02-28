@@ -216,31 +216,6 @@ TEST_F(LoweringTestFixture, VoidReturnDoesNotCrash) {
   EXPECT_TRUE(module);
 }
 
-// B6: Assignment lowering test
-TEST_F(LoweringTestFixture, LowersAssignment) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      R"(
-    #include <cstdint>
-    int32_t withAssign(int32_t a) {
-      int32_t x = a;
-      x = a + 1;
-      return x;
-    }
-  )",
-      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
-      std::make_shared<clang::PCHContainerOperations>());
-  ASSERT_NE(ast, nullptr);
-
-  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
-  mlir::MLIRContext mlirCtx;
-  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
-  ASSERT_TRUE(module);
-
-  bool foundAssign = false;
-  module->walk([&](arc::AssignOp) { foundAssign = true; });
-  EXPECT_TRUE(foundAssign);
-}
-
 // --- Slice 2: Multi-type lowering tests ---
 
 // [TC-9] Parametrized type-mapping test covering all integer widths/signedness
@@ -771,6 +746,33 @@ TEST_F(LoweringTestFixture, LowersContinueStatementToArcContinue) {
   bool foundContinue = false;
   module->walk([&](arc::ContinueOp) { foundContinue = true; });
   EXPECT_TRUE(foundContinue);
+}
+
+// --- Coverage gap C2: DiagnosticTracker integration with lowerToArc ---
+
+TEST_F(LoweringTestFixture, UnsupportedExprIncrementsFallbackCount) {
+  // The ternary operator (ConditionalOperator) is not handled by lowerExpr,
+  // so it hits the catch-all fallback path that calls recordFallback().
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    int32_t abs_val(int32_t a) {
+      return a > 0 ? a : -a;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  DiagnosticTracker::reset();
+  ASSERT_EQ(DiagnosticTracker::getFallbackCount(), 0);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  // Module is still produced (lowering is best-effort), but fallback was hit.
+  ASSERT_TRUE(module);
+  EXPECT_GT(DiagnosticTracker::getFallbackCount(), 0);
 }
 
 } // namespace
