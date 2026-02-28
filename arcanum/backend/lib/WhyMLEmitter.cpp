@@ -607,12 +607,9 @@ private:
     if (region.empty()) {
       return false;
     }
-    for (auto& op : region.front().getOperations()) {
-      if (llvm::isa<arc::BreakOp>(&op)) {
-        return true;
-      }
-    }
-    return false;
+    return std::ranges::any_of(region.front().getOperations(), [](auto& op) {
+      return llvm::isa<arc::BreakOp>(&op);
+    });
   }
 
   /// Check whether a region contains an arc.continue op (direct child only).
@@ -620,12 +617,9 @@ private:
     if (region.empty()) {
       return false;
     }
-    for (auto& op : region.front().getOperations()) {
-      if (llvm::isa<arc::ContinueOp>(&op)) {
-        return true;
-      }
-    }
-    return false;
+    return std::ranges::any_of(region.front().getOperations(), [](auto& op) {
+      return llvm::isa<arc::ContinueOp>(&op);
+    });
   }
 
   /// Check whether break/continue appears in an unsupported structural
