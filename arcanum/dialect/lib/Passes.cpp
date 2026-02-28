@@ -39,8 +39,9 @@ void collectAssignTargetsFromRegion(mlir::Region& region,
 std::string joinNames(const llvm::SmallVector<std::string>& names) {
   std::string result;
   for (size_t i = 0; i < names.size(); ++i) {
-    if (i > 0)
+    if (i > 0) {
       result += ", ";
+    }
     result += names[i];
   }
   return result;
@@ -92,10 +93,9 @@ std::string extractInitVarName(mlir::Region& initRegion) {
 /// Extract the upper bound variable name from the cond region.
 /// Looks for arc.cmp lt, <var>, <hi> and returns the name of <hi>.
 /// Returns empty string if pattern not recognized.
-std::string extractCondUpperBound(mlir::Region& condRegion,
-                                  const std::string& inductionVar,
-                                  llvm::DenseMap<mlir::Value, std::string>&
-                                      valueNames) {
+std::string
+extractCondUpperBound(mlir::Region& condRegion, const std::string& inductionVar,
+                      llvm::DenseMap<mlir::Value, std::string>& valueNames) {
   if (condRegion.empty()) {
     return "";
   }
@@ -200,7 +200,7 @@ std::string tryInferVariant(arc::LoopOp loopOp) {
 
   // Map parent region variables (function parameters via VarOp or block args)
   auto* parentBlock = loopOp->getBlock();
-  if (parentBlock) {
+  if (parentBlock != nullptr) {
     for (auto& op : *parentBlock) {
       if (auto varOp = llvm::dyn_cast<arc::VarOp>(&op)) {
         valueNames[varOp.getResult()] = varOp.getName().str();
@@ -234,10 +234,10 @@ void autoInferVariant(arc::LoopOp loopOp) {
   auto inferred = tryInferVariant(loopOp);
   if (!inferred.empty()) {
     loopOp->setAttr("variant",
-                     mlir::StringAttr::get(loopOp->getContext(), inferred));
+                    mlir::StringAttr::get(loopOp->getContext(), inferred));
   } else {
     loopOp.emitWarning("could not auto-infer loop_variant for counted "
-                        "for-loop; provide an explicit loop_variant");
+                       "for-loop; provide an explicit loop_variant");
   }
 }
 
@@ -275,9 +275,11 @@ struct LoopContractPass
                                mlir::OperationPass<mlir::ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LoopContractPass)
 
-  llvm::StringRef getArgument() const override { return "loop-contract"; }
+  [[nodiscard]] llvm::StringRef getArgument() const override {
+    return "loop-contract";
+  }
 
-  llvm::StringRef getDescription() const override {
+  [[nodiscard]] llvm::StringRef getDescription() const override {
     return "Auto-compute assigns, validate contracts";
   }
 

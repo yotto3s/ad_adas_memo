@@ -639,8 +639,8 @@ private:
     if (loopOp.getBodyRegion().empty()) {
       return false;
     }
-    return detectUnsupportedBreakContinueInBlock(
-        loopOp.getBodyRegion().front(), loopOp, /*depth=*/0);
+    return detectUnsupportedBreakContinueInBlock(loopOp.getBodyRegion().front(),
+                                                 loopOp, /*depth=*/0);
   }
 
   /// Recursively walk a block looking for break/continue in unsupported
@@ -662,8 +662,7 @@ private:
   /// Unsupported if: (a) the IfOp has an else region and contains
   /// break/continue in either branch, or (b) break/continue is nested
   /// deeper than one IfOp level from the body block root.
-  bool detectUnsupportedBreakContinueInIf(arc::IfOp ifOp,
-                                          arc::LoopOp loopOp,
+  bool detectUnsupportedBreakContinueInIf(arc::IfOp ifOp, arc::LoopOp loopOp,
                                           unsigned depth) {
     bool thenHasBC = regionContainsBreak(ifOp.getThenRegion()) ||
                      regionContainsContinue(ifOp.getThenRegion());
@@ -673,8 +672,8 @@ private:
     // Case (a): break/continue in an if with an else branch
     if (!ifOp.getElseRegion().empty() && (thenHasBC || elseHasBC)) {
       loopOp.emitError("break/continue inside if-else is not supported in "
-                        "Slice 3; restructure the loop to use break/continue "
-                        "in if-then (no else) only");
+                       "Slice 3; restructure the loop to use break/continue "
+                       "in if-then (no else) only");
       return true;
     }
 
@@ -688,14 +687,14 @@ private:
 
     // Recurse into then/else regions at increased depth
     if (!ifOp.getThenRegion().empty()) {
-      if (detectUnsupportedBreakContinueInBlock(
-              ifOp.getThenRegion().front(), loopOp, depth + 1)) {
+      if (detectUnsupportedBreakContinueInBlock(ifOp.getThenRegion().front(),
+                                                loopOp, depth + 1)) {
         return true;
       }
     }
     if (!ifOp.getElseRegion().empty()) {
-      if (detectUnsupportedBreakContinueInBlock(
-              ifOp.getElseRegion().front(), loopOp, depth + 1)) {
+      if (detectUnsupportedBreakContinueInBlock(ifOp.getElseRegion().front(),
+                                                loopOp, depth + 1)) {
         return true;
       }
     }
@@ -794,8 +793,7 @@ private:
                   llvm::DenseMap<mlir::Value, std::string>& nameMap) {
     auto assignedVars = collectAssignedVars(loopOp);
     if (assignedVars.empty()) {
-      loopOp.emitWarning(
-          "loop has no assigned variables; skipping emission");
+      loopOp.emitWarning("loop has no assigned variables; skipping emission");
       return;
     }
 
@@ -811,8 +809,10 @@ private:
     auto initExprs = captureInitialValues(assignedVars);
 
     bool hasUpdate = !loopOp.getUpdateRegion().empty();
-    LoopContext loopCtx{loopFuncName, assignedVars, hasUpdate,
-                        &loopOp.getUpdateRegion()};
+    LoopContext loopCtx{.loopFuncName = loopFuncName,
+                        .assignedVars = assignedVars,
+                        .hasUpdateRegion = hasUpdate,
+                        .updateRegion = &loopOp.getUpdateRegion()};
     auto* prevLoop = currentLoop;
     currentLoop = &loopCtx;
 
@@ -863,7 +863,7 @@ private:
   /// to use as initial arguments to the recursive function call.
   llvm::SmallVector<std::string>
   captureInitialValues(const llvm::SmallVector<std::string>& vars) {
-    return llvm::SmallVector<std::string>(vars.begin(), vars.end());
+    return {vars.begin(), vars.end()};
   }
 
   /// Map all MLIR Values that represent loop variables to their variable
@@ -994,12 +994,12 @@ private:
   /// Emit body ops starting from `it`, handling break/continue-containing
   /// IfOps by restructuring them into proper if-then-else.
   /// \param updateRegion Nullable; nullptr for do-while loops (no update).
-  void emitBodyOpsFrom(
-      mlir::Block::iterator it, mlir::Block::iterator end,
-      mlir::Region* updateRegion, llvm::raw_string_ostream& out,
-      llvm::DenseMap<mlir::Value, std::string>& nameMap,
-      const std::string& loopFuncName,
-      const llvm::SmallVector<std::string>& assignedVars) {
+  void emitBodyOpsFrom(mlir::Block::iterator it, mlir::Block::iterator end,
+                       mlir::Region* updateRegion,
+                       llvm::raw_string_ostream& out,
+                       llvm::DenseMap<mlir::Value, std::string>& nameMap,
+                       const std::string& loopFuncName,
+                       const llvm::SmallVector<std::string>& assignedVars) {
     for (; it != end; ++it) {
       auto& op = *it;
       if (llvm::isa<arc::YieldOp>(&op)) {
@@ -1007,8 +1007,7 @@ private:
       }
 
       if (auto ifOp = llvm::dyn_cast<arc::IfOp>(&op)) {
-        if (ifOp.getElseRegion().empty() &&
-            isBreakOrContinueIf(ifOp)) {
+        if (ifOp.getElseRegion().empty() && isBreakOrContinueIf(ifOp)) {
           emitBreakContinueIf(ifOp, std::next(it), end, updateRegion, out,
                               nameMap, loopFuncName, assignedVars);
           return;
@@ -1035,13 +1034,13 @@ private:
   /// - then-branch: ops before break/continue + break/continue action
   /// - else-branch: remaining body ops + update + recursive call
   /// \param updateRegion Nullable; nullptr for do-while loops (no update).
-  void emitBreakContinueIf(
-      arc::IfOp ifOp, mlir::Block::iterator restBegin,
-      mlir::Block::iterator restEnd, mlir::Region* updateRegion,
-      llvm::raw_string_ostream& out,
-      llvm::DenseMap<mlir::Value, std::string>& nameMap,
-      const std::string& loopFuncName,
-      const llvm::SmallVector<std::string>& assignedVars) {
+  void emitBreakContinueIf(arc::IfOp ifOp, mlir::Block::iterator restBegin,
+                           mlir::Block::iterator restEnd,
+                           mlir::Region* updateRegion,
+                           llvm::raw_string_ostream& out,
+                           llvm::DenseMap<mlir::Value, std::string>& nameMap,
+                           const std::string& loopFuncName,
+                           const llvm::SmallVector<std::string>& assignedVars) {
     auto cond = getExpr(ifOp.getCondition(), nameMap);
     out << "    if " << cond << " then\n";
 
@@ -1175,14 +1174,14 @@ private:
       // break/continue are handled by emitBreakContinueIf when inside a
       // restructured loop body. This path is reached only as a fallback
       // (e.g., bare break/continue not inside an if).
-      assert(currentLoop &&
-             "arc.break encountered outside of a loop context");
+      assert(currentLoop && "arc.break encountered outside of a loop context");
       out << "        " << buildTupleExpr(currentLoop->assignedVars) << "\n";
     } else if (llvm::isa<arc::ContinueOp>(&op)) {
       assert(currentLoop &&
              "arc.continue encountered outside of a loop context");
       // For for-loops, emit update before recursing
-      if (currentLoop->hasUpdateRegion && currentLoop->updateRegion) {
+      if (currentLoop->hasUpdateRegion &&
+          (currentLoop->updateRegion != nullptr)) {
         emitRegionOps(*currentLoop->updateRegion, out, nameMap);
       }
       emitRecursiveCall(out, currentLoop->loopFuncName,

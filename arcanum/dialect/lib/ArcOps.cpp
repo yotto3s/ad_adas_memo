@@ -303,17 +303,21 @@ mlir::ParseResult LoopOp::parse(mlir::OpAsmParser& parser,
   auto* bodyRegion = result.addRegion();
   while (true) {
     if (parser.parseOptionalKeyword("init").succeeded()) {
-      if (parser.parseRegion(*initRegion))
+      if (parser.parseRegion(*initRegion)) {
         return mlir::failure();
+      }
     } else if (parser.parseOptionalKeyword("cond").succeeded()) {
-      if (parser.parseRegion(*condRegion))
+      if (parser.parseRegion(*condRegion)) {
         return mlir::failure();
+      }
     } else if (parser.parseOptionalKeyword("update").succeeded()) {
-      if (parser.parseRegion(*updateRegion))
+      if (parser.parseRegion(*updateRegion)) {
         return mlir::failure();
+      }
     } else if (parser.parseOptionalKeyword("body").succeeded()) {
-      if (parser.parseRegion(*bodyRegion))
+      if (parser.parseRegion(*bodyRegion)) {
         return mlir::failure();
+      }
     } else {
       break;
     }

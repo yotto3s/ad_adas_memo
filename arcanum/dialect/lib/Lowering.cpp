@@ -351,7 +351,7 @@ private:
     }
     auto& sm = astCtx.getSourceManager();
     auto fileId = sm.getFileID(stmtLoc);
-    auto* commentsMap = astCtx.Comments.getCommentsInFile(fileId);
+    const auto* commentsMap = astCtx.Comments.getCommentsInFile(fileId);
     if (commentsMap == nullptr) {
       return loopInfo;
     }
@@ -450,19 +450,19 @@ private:
     loopOp->setAttr("condition_first", builder.getBoolAttr(true));
     attachLoopContractAttrs(loopOp, loopInfo);
 
-    if (forStmt->getInit()) {
+    if (forStmt->getInit() != nullptr) {
       lowerStmtIntoRegion(loopOp.getInitRegion(), forStmt->getInit(), valueMap);
       appendYieldTerminator(loopOp.getInitRegion());
     }
-    if (forStmt->getCond()) {
+    if (forStmt->getCond() != nullptr) {
       lowerCondIntoRegion(loopOp.getCondRegion(), forStmt->getCond(), valueMap);
     }
-    if (forStmt->getInc()) {
+    if (forStmt->getInc() != nullptr) {
       lowerStmtIntoRegion(loopOp.getUpdateRegion(), forStmt->getInc(),
                           valueMap);
       appendYieldTerminator(loopOp.getUpdateRegion());
     }
-    if (forStmt->getBody()) {
+    if (forStmt->getBody() != nullptr) {
       lowerStmtIntoRegion(loopOp.getBodyRegion(), forStmt->getBody(), valueMap);
       appendYieldTerminator(loopOp.getBodyRegion());
     }
@@ -478,7 +478,7 @@ private:
 
     lowerCondIntoRegion(loopOp.getCondRegion(), whileStmt->getCond(), valueMap);
 
-    if (whileStmt->getBody()) {
+    if (whileStmt->getBody() != nullptr) {
       lowerStmtIntoRegion(loopOp.getBodyRegion(), whileStmt->getBody(),
                           valueMap);
       appendYieldTerminator(loopOp.getBodyRegion());
@@ -495,7 +495,7 @@ private:
 
     lowerCondIntoRegion(loopOp.getCondRegion(), doStmt->getCond(), valueMap);
 
-    if (doStmt->getBody()) {
+    if (doStmt->getBody() != nullptr) {
       lowerStmtIntoRegion(loopOp.getBodyRegion(), doStmt->getBody(), valueMap);
       appendYieldTerminator(loopOp.getBodyRegion());
     }

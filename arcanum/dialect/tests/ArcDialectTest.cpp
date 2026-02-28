@@ -630,7 +630,7 @@ TEST_F(ArcDialectTest, LoopOpPrintRoundtrip) {
   auto initConst = builder_->create<arc::ConstantOp>(
       builder_->getUnknownLoc(), i32Ty, builder_->getI32IntegerAttr(0));
   auto varI = builder_->create<arc::VarOp>(builder_->getUnknownLoc(), i32Ty,
-                                            "i", initConst);
+                                           "i", initConst);
 
   auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
   loopOp->setAttr("condition_first", builder_->getBoolAttr(true));
@@ -660,8 +660,8 @@ TEST_F(ArcDialectTest, LoopOpPrintRoundtrip) {
     builder_->setInsertionPointToEnd(&block);
     auto one = builder_->create<arc::ConstantOp>(
         builder_->getUnknownLoc(), i32Ty, builder_->getI32IntegerAttr(1));
-    builder_->create<arc::AssignOp>(builder_->getUnknownLoc(),
-                                    varI.getResult(), one);
+    builder_->create<arc::AssignOp>(builder_->getUnknownLoc(), varI.getResult(),
+                                    one);
     builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
   }
 

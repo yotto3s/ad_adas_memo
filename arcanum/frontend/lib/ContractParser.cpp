@@ -403,7 +403,8 @@ std::vector<std::string> extractAnnotationLines(llvm::StringRef commentText) {
 
 /// Parse comma-separated identifiers from a string.
 /// NOTE (CQ-2): Duplicates parseAssignsList in WhyMLEmitter.cpp.
-/// Consolidation deferred: different build targets use different container types.
+/// Consolidation deferred: different build targets use different container
+/// types.
 static std::vector<std::string>
 parseCommaSeparatedIdents(llvm::StringRef text) {
   std::vector<std::string> result;
