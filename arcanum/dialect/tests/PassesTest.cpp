@@ -261,9 +261,16 @@ TEST(PassesTest, LoopContractPassWarnsOnMissingInvariant) {
   auto result = runPasses(env.module);
   EXPECT_TRUE(result.succeeded());
 
-  // Should emit a warning about missing invariant.
+  // Should emit a warning about missing invariant (may also emit variant
+  // auto-inference warning).
   ASSERT_FALSE(diag.warnings.empty());
-  EXPECT_NE(diag.warnings[0].find("loop_invariant"), std::string::npos);
+  bool foundInvariantWarning = false;
+  for (const auto& w : diag.warnings) {
+    if (w.find("loop_invariant") != std::string::npos) {
+      foundInvariantWarning = true;
+    }
+  }
+  EXPECT_TRUE(foundInvariantWarning);
 }
 
 TEST(PassesTest, LoopContractPassErrorsOnWhileWithoutVariant) {
@@ -305,6 +312,67 @@ TEST(PassesTest, LoopContractPassAllowsForLoopWithoutVariant) {
   auto result = runPasses(env.module);
   EXPECT_TRUE(result.succeeded());
   EXPECT_TRUE(diag.errors.empty());
+}
+
+// [TC-8] Test: auto-compute assigns finds variables in both body and update.
+TEST(PassesTest, LoopContractPassAutoComputesAssignsFromUpdateRegion) {
+  LoopTestModule env;
+  mlir::OpBuilder builder(&env.ctx);
+  env.module = mlir::ModuleOp::create(builder.getUnknownLoc());
+
+  auto i32Ty = arc::IntType::get(&env.ctx, 32, true);
+  auto& funcBlock = createFuncWithBlock(builder, env);
+
+  auto loc = builder.getUnknownLoc();
+  builder.setInsertionPointToEnd(&funcBlock);
+
+  auto initConst =
+      builder.create<arc::ConstantOp>(loc, i32Ty, builder.getI32IntegerAttr(0));
+  auto varX = builder.create<arc::VarOp>(loc, i32Ty, "x", initConst);
+  auto varZ = builder.create<arc::VarOp>(loc, i32Ty, "z", initConst);
+  auto newVal =
+      builder.create<arc::ConstantOp>(loc, i32Ty, builder.getI32IntegerAttr(1));
+
+  auto loopOp = builder.create<arc::LoopOp>(loc);
+  loopOp->setAttr("invariant", builder.getStringAttr("true"));
+  loopOp->setAttr("variant", builder.getStringAttr("n - i"));
+
+  populateCondRegion(builder, loopOp, env.ctx);
+
+  // Body region: assign to x
+  {
+    auto& bodyBlock = loopOp.getBodyRegion().emplaceBlock();
+    builder.setInsertionPointToEnd(&bodyBlock);
+    builder.create<arc::AssignOp>(loc, varX.getResult(), newVal);
+    builder.create<arc::YieldOp>(loc);
+  }
+
+  // Update region: assign to z
+  {
+    auto& updateBlock = loopOp.getUpdateRegion().emplaceBlock();
+    builder.setInsertionPointToEnd(&updateBlock);
+    builder.create<arc::AssignOp>(loc, varZ.getResult(), newVal);
+    builder.create<arc::YieldOp>(loc);
+  }
+
+  // Init region (makes it a for-loop)
+  populateInitRegion(builder, loopOp);
+
+  builder.setInsertionPointAfter(loopOp);
+  builder.create<arc::ReturnOp>(loc, funcBlock.getArgument(0));
+
+  DiagnosticCapture diag(env.ctx);
+  auto result = runPasses(env.module);
+  EXPECT_TRUE(result.succeeded());
+
+  auto assignsAttr = loopOp->getAttrOfType<mlir::StringAttr>("assigns");
+  ASSERT_TRUE(assignsAttr != nullptr);
+
+  auto assignsStr = assignsAttr.getValue().str();
+  EXPECT_NE(assignsStr.find("x"), std::string::npos)
+      << "Should find 'x' from body region";
+  EXPECT_NE(assignsStr.find("z"), std::string::npos)
+      << "Should find 'z' from update region";
 }
 
 } // namespace

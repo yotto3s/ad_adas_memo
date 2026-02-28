@@ -570,6 +570,7 @@ TEST_F(LoweringTestFixture, LowersForLoopToArcLoop) {
       int32_t sum = 0;
       //@ loop_invariant: sum >= 0
       //@ loop_invariant: i >= 0 && i <= n
+      //@ loop_variant: n - i
       //@ loop_assigns: i, sum
       for (int32_t i = 0; i < n; i = i + 1) {
         sum = sum + i;
@@ -599,6 +600,15 @@ TEST_F(LoweringTestFixture, LowersForLoopToArcLoop) {
     auto inv = loopOp->getAttrOfType<mlir::StringAttr>("invariant");
     ASSERT_TRUE(inv);
     EXPECT_NE(inv.getValue().str().find("sum >= 0"), std::string::npos);
+    // [TC-7] Verify variant attribute is set from loop_variant annotation
+    auto var = loopOp->getAttrOfType<mlir::StringAttr>("variant");
+    ASSERT_TRUE(var);
+    EXPECT_NE(var.getValue().str().find("n - i"), std::string::npos);
+    // [TC-7] Verify assigns attribute is set from loop_assigns annotation
+    auto assigns = loopOp->getAttrOfType<mlir::StringAttr>("assigns");
+    ASSERT_TRUE(assigns);
+    EXPECT_NE(assigns.getValue().str().find("i"), std::string::npos);
+    EXPECT_NE(assigns.getValue().str().find("sum"), std::string::npos);
   });
   EXPECT_TRUE(foundLoop);
 }
@@ -638,6 +648,13 @@ TEST_F(LoweringTestFixture, LowersWhileLoopToArcLoop) {
     EXPECT_FALSE(loopOp.getCondRegion().empty());
     EXPECT_TRUE(loopOp.getUpdateRegion().empty());
     EXPECT_FALSE(loopOp.getBodyRegion().empty());
+    // [TC-7] Verify variant and assigns from annotations
+    auto var = loopOp->getAttrOfType<mlir::StringAttr>("variant");
+    ASSERT_TRUE(var);
+    EXPECT_EQ(var.getValue().str(), "x");
+    auto assigns = loopOp->getAttrOfType<mlir::StringAttr>("assigns");
+    ASSERT_TRUE(assigns);
+    EXPECT_EQ(assigns.getValue().str(), "x");
   });
   EXPECT_TRUE(foundLoop);
 }
@@ -675,6 +692,14 @@ TEST_F(LoweringTestFixture, LowersDoWhileLoopToArcLoop) {
     auto condFirst = loopOp->getAttrOfType<mlir::BoolAttr>("condition_first");
     ASSERT_TRUE(condFirst);
     EXPECT_FALSE(condFirst.getValue());
+    // [TC-7] Verify variant and assigns from annotations
+    auto var = loopOp->getAttrOfType<mlir::StringAttr>("variant");
+    ASSERT_TRUE(var);
+    EXPECT_EQ(var.getValue().str(), "x");
+    auto assigns = loopOp->getAttrOfType<mlir::StringAttr>("assigns");
+    ASSERT_TRUE(assigns);
+    EXPECT_NE(assigns.getValue().str().find("x"), std::string::npos);
+    EXPECT_NE(assigns.getValue().str().find("count"), std::string::npos);
   });
   EXPECT_TRUE(foundLoop);
 }
@@ -710,6 +735,42 @@ TEST_F(LoweringTestFixture, LowersBreakStatementToArcBreak) {
   bool foundBreak = false;
   module->walk([&](arc::BreakOp) { foundBreak = true; });
   EXPECT_TRUE(foundBreak);
+}
+
+TEST_F(LoweringTestFixture, LowersContinueStatementToArcContinue) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n > 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t sum_odd(int32_t n) {
+      int32_t sum = 0;
+      int32_t i = 0;
+      //@ loop_invariant: i >= 0 && i <= n && sum >= 0
+      //@ loop_variant: n - i
+      //@ loop_assigns: i, sum
+      while (i < n) {
+        i = i + 1;
+        if (i % 2 == 0) {
+          continue;
+        }
+        sum = sum + i;
+      }
+      return sum;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  bool foundContinue = false;
+  module->walk([&](arc::ContinueOp) { foundContinue = true; });
+  EXPECT_TRUE(foundContinue);
 }
 
 } // namespace

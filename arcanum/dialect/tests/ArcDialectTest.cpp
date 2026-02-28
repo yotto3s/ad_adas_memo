@@ -606,5 +606,101 @@ TEST_F(ArcDialectTest, LoopOpHasFourRegions) {
   module->destroy();
 }
 
+// ---------------------------------------------------------------------------
+// [TC-10] LoopOp roundtrip test: create a LoopOp with all regions and
+// attributes, print to string, verify expected keywords appear.
+// ---------------------------------------------------------------------------
+
+TEST_F(ArcDialectTest, LoopOpPrintRoundtrip) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto i32Ty = arc::IntType::get(&context_, 32, true);
+  auto boolTy = arc::BoolType::get(&context_);
+  auto funcType = builder_->getFunctionType({i32Ty}, {i32Ty});
+
+  auto funcOp = builder_->create<arc::FuncOp>(
+      builder_->getUnknownLoc(), builder_->getStringAttr("loop_test"),
+      mlir::TypeAttr::get(funcType), mlir::StringAttr(), mlir::StringAttr());
+  auto& entryBlock = funcOp.getBody().emplaceBlock();
+  entryBlock.addArgument(i32Ty, builder_->getUnknownLoc());
+
+  builder_->setInsertionPointToEnd(&entryBlock);
+
+  auto initConst = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Ty, builder_->getI32IntegerAttr(0));
+  auto varI = builder_->create<arc::VarOp>(builder_->getUnknownLoc(), i32Ty,
+                                            "i", initConst);
+
+  auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
+  loopOp->setAttr("condition_first", builder_->getBoolAttr(true));
+  loopOp->setAttr("invariant", builder_->getStringAttr("i >= 0"));
+  loopOp->setAttr("variant", builder_->getStringAttr("n - i"));
+  loopOp->setAttr("assigns", builder_->getStringAttr("i"));
+
+  // Init region
+  {
+    auto& block = loopOp.getInitRegion().emplaceBlock();
+    builder_->setInsertionPointToEnd(&block);
+    builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
+  }
+
+  // Cond region
+  {
+    auto& block = loopOp.getCondRegion().emplaceBlock();
+    builder_->setInsertionPointToEnd(&block);
+    auto trueCond = builder_->create<arc::ConstantOp>(
+        builder_->getUnknownLoc(), boolTy, builder_->getBoolAttr(true));
+    builder_->create<arc::ConditionOp>(builder_->getUnknownLoc(), trueCond);
+  }
+
+  // Body region
+  {
+    auto& block = loopOp.getBodyRegion().emplaceBlock();
+    builder_->setInsertionPointToEnd(&block);
+    auto one = builder_->create<arc::ConstantOp>(
+        builder_->getUnknownLoc(), i32Ty, builder_->getI32IntegerAttr(1));
+    builder_->create<arc::AssignOp>(builder_->getUnknownLoc(),
+                                    varI.getResult(), one);
+    builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
+  }
+
+  // Update region
+  {
+    auto& block = loopOp.getUpdateRegion().emplaceBlock();
+    builder_->setInsertionPointToEnd(&block);
+    builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
+  }
+
+  builder_->setInsertionPointAfter(loopOp);
+  builder_->create<arc::ReturnOp>(builder_->getUnknownLoc(),
+                                  entryBlock.getArgument(0));
+
+  // Print the module to string
+  std::string printed;
+  llvm::raw_string_ostream os(printed);
+  module->print(os);
+
+  // Verify expected keywords appear in printed output
+  EXPECT_NE(printed.find("arc.loop"), std::string::npos)
+      << "Printed output should contain 'arc.loop'";
+  EXPECT_NE(printed.find("condition_first"), std::string::npos)
+      << "Printed output should contain 'condition_first'";
+  EXPECT_NE(printed.find("invariant"), std::string::npos)
+      << "Printed output should contain 'invariant'";
+  EXPECT_NE(printed.find("variant"), std::string::npos)
+      << "Printed output should contain 'variant'";
+  EXPECT_NE(printed.find("assigns"), std::string::npos)
+      << "Printed output should contain 'assigns'";
+  EXPECT_NE(printed.find("arc.condition"), std::string::npos)
+      << "Printed output should contain 'arc.condition'";
+  EXPECT_NE(printed.find("arc.yield"), std::string::npos)
+      << "Printed output should contain 'arc.yield'";
+  EXPECT_NE(printed.find("arc.assign"), std::string::npos)
+      << "Printed output should contain 'arc.assign'";
+
+  module->destroy();
+}
+
 } // namespace
 } // namespace arcanum

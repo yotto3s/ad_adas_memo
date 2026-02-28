@@ -402,6 +402,8 @@ std::vector<std::string> extractAnnotationLines(llvm::StringRef commentText) {
 }
 
 /// Parse comma-separated identifiers from a string.
+/// NOTE (CQ-2): Duplicates parseAssignsList in WhyMLEmitter.cpp.
+/// Consolidation deferred: different build targets use different container types.
 static std::vector<std::string>
 parseCommaSeparatedIdents(llvm::StringRef text) {
   std::vector<std::string> result;
@@ -427,7 +429,9 @@ void applyLoopAnnotationLine(llvm::StringRef line, LoopContractInfo& info) {
     info.variant = line.drop_front(LOOP_VARIANT_PREFIX.size()).trim().str();
   } else if (line.starts_with(LOOP_ASSIGNS_PREFIX)) {
     auto assigns = line.drop_front(LOOP_ASSIGNS_PREFIX.size()).trim();
-    info.assigns = parseCommaSeparatedIdents(assigns);
+    auto newAssigns = parseCommaSeparatedIdents(assigns);
+    info.assigns.insert(info.assigns.end(), newAssigns.begin(),
+                        newAssigns.end());
   } else if (line.starts_with(LABEL_PREFIX)) {
     info.label = line.drop_front(LABEL_PREFIX.size()).trim().str();
   }

@@ -16,6 +16,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -23,6 +24,10 @@
 #include <string>
 
 namespace arcanum {
+
+/// Maximum line distance between a loop annotation comment and the loop
+/// statement it annotates.
+static constexpr unsigned MAX_ANNOTATION_DISTANCE = 10;
 
 /// Lookup table mapping BinaryOpKind to its operator string for serialization.
 static constexpr std::array<const char*, 13> BINARY_OP_STRINGS = {
@@ -239,6 +244,7 @@ private:
   }
 
   void lowerFunction(clang::FunctionDecl* funcDecl) {
+    labelsSeen.clear(); // Reset per-function label tracking (SC-2)
     auto loc = getLoc(funcDecl->getLocation());
     auto name = funcDecl->getNameAsString();
 
@@ -332,6 +338,12 @@ private:
   /// Collect loop annotation lines from comments preceding a Stmt location.
   /// Scans all comments in the same file and selects those ending within 10
   /// lines before the statement.
+  ///
+  /// Known limitation (CR-4): distance-based collection does not filter
+  /// out comments that belong to an intervening loop. If two loops are
+  /// within MAX_ANNOTATION_DISTANCE lines of each other, annotations for
+  /// the first loop may be incorrectly attributed to the second. In
+  /// practice, loop annotations immediately precede their loop statement.
   LoopContractInfo collectLoopAnnotations(clang::SourceLocation stmtLoc) {
     LoopContractInfo loopInfo;
     if (!stmtLoc.isValid()) {
@@ -344,7 +356,6 @@ private:
       return loopInfo;
     }
     unsigned stmtBeginLine = sm.getPresumedLineNumber(stmtLoc);
-    constexpr unsigned MAX_ANNOTATION_DISTANCE = 10;
     for (const auto& [offset, comment] : *commentsMap) {
       auto commentEnd = comment->getEndLoc();
       if (!commentEnd.isValid()) {
@@ -380,6 +391,8 @@ private:
       loopOp->setAttr("variant", builder.getStringAttr(loopInfo.variant));
     }
     if (!loopInfo.assigns.empty()) {
+      // NOTE (CQ-3): Duplicates joinNames in Passes.cpp.  Consolidation
+      // deferred pending a shared utility.
       std::string assignsStr;
       for (size_t i = 0; i < loopInfo.assigns.size(); ++i) {
         if (i > 0) {
@@ -390,6 +403,10 @@ private:
       loopOp->setAttr("assigns", builder.getStringAttr(assignsStr));
     }
     if (!loopInfo.label.empty()) {
+      if (!labelsSeen.insert(loopInfo.label).second) {
+        loopOp.emitError("duplicate loop label '")
+            << loopInfo.label << "' within function";
+      }
       loopOp->setAttr("label", builder.getStringAttr(loopInfo.label));
     }
   }
@@ -748,6 +765,9 @@ private:
   mlir::OpBuilder builder;
   mlir::OwningOpRef<mlir::ModuleOp> module;
   std::string currentOverflowMode = "trap";
+  /// Track label names within the current function for uniqueness validation
+  /// (SC-2: spec requires label uniqueness within a function).
+  llvm::StringSet<> labelsSeen;
 };
 
 } // namespace

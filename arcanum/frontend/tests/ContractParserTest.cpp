@@ -761,5 +761,22 @@ TEST(ContractParserTest, ParsesLoopLabel) {
   EXPECT_EQ(info.label, "outer");
 }
 
+// [TC-11] Edge case: empty loop_assigns produces empty assigns vector.
+TEST(ContractParserTest, EmptyLoopAssignsProducesEmptyVector) {
+  LoopContractInfo info;
+  applyLoopAnnotationLine("loop_assigns: ", info);
+  EXPECT_TRUE(info.assigns.empty());
+}
+
+// [F2] Test: multiple loop_assigns lines are merged, not overwritten.
+TEST(ContractParserTest, MultipleLoopAssignsLinesAreMerged) {
+  LoopContractInfo info;
+  applyLoopAnnotationLine("loop_assigns: i", info);
+  applyLoopAnnotationLine("loop_assigns: sum", info);
+  ASSERT_EQ(info.assigns.size(), 2u);
+  EXPECT_EQ(info.assigns[0], "i");
+  EXPECT_EQ(info.assigns[1], "sum");
+}
+
 } // namespace
 } // namespace arcanum

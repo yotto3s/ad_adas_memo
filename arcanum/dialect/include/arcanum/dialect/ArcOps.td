@@ -212,6 +212,7 @@ def Arc_BreakOp : Arc_Op<"break", [Terminator]> {
     Valid only inside an arc.loop body region.
   }];
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 def Arc_ContinueOp : Arc_Op<"continue", [Terminator]> {
@@ -221,6 +222,7 @@ def Arc_ContinueOp : Arc_Op<"continue", [Terminator]> {
     Valid only inside an arc.loop body region.
   }];
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 def Arc_ConditionOp : Arc_Op<"condition", [Terminator]> {

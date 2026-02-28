@@ -342,7 +342,7 @@ void LoopOp::print(mlir::OpAsmPrinter& printer) {
 }
 
 //===----------------------------------------------------------------------===//
-// BreakOp custom assembly format
+// BreakOp custom assembly format + verifier
 //===----------------------------------------------------------------------===//
 
 mlir::ParseResult BreakOp::parse(mlir::OpAsmParser& parser,
@@ -354,8 +354,20 @@ void BreakOp::print(mlir::OpAsmPrinter& printer) {
   printer.printOptionalAttrDict((*this)->getAttrs());
 }
 
+/// Verify that this BreakOp appears inside an arc.loop (CR-5).
+mlir::LogicalResult BreakOp::verify() {
+  auto* parentOp = (*this)->getParentOp();
+  while (parentOp != nullptr) {
+    if (llvm::isa<LoopOp>(parentOp)) {
+      return mlir::success();
+    }
+    parentOp = parentOp->getParentOp();
+  }
+  return emitOpError("must be nested inside an 'arc.loop' operation");
+}
+
 //===----------------------------------------------------------------------===//
-// ContinueOp custom assembly format
+// ContinueOp custom assembly format + verifier
 //===----------------------------------------------------------------------===//
 
 mlir::ParseResult ContinueOp::parse(mlir::OpAsmParser& parser,
@@ -365,6 +377,18 @@ mlir::ParseResult ContinueOp::parse(mlir::OpAsmParser& parser,
 
 void ContinueOp::print(mlir::OpAsmPrinter& printer) {
   printer.printOptionalAttrDict((*this)->getAttrs());
+}
+
+/// Verify that this ContinueOp appears inside an arc.loop (CR-5).
+mlir::LogicalResult ContinueOp::verify() {
+  auto* parentOp = (*this)->getParentOp();
+  while (parentOp != nullptr) {
+    if (llvm::isa<LoopOp>(parentOp)) {
+      return mlir::success();
+    }
+    parentOp = parentOp->getParentOp();
+  }
+  return emitOpError("must be nested inside an 'arc.loop' operation");
 }
 
 //===----------------------------------------------------------------------===//

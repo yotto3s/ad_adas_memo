@@ -179,6 +179,11 @@ INSTANTIATE_TEST_SUITE_P(
     }
   )",
                                              "floating-point"},
+                      // Note: BreakOutsideLoop uses break-in-switch because
+                      // switch is rejected first.  Bare break outside any
+                      // loop/switch is a Clang parse error and cannot reach
+                      // SubsetEnforcer.  The loopDepth==0 check in
+                      // VisitBreakStmt is a defensive measure.
                       RejectedConstructParam{"BreakOutsideLoop",
                                              R"(
     #include <cstdint>
@@ -192,6 +197,12 @@ INSTANTIATE_TEST_SUITE_P(
   )",
                                              "break"}),
     RejectedConstructName{});
+
+// [SC-5/TC-6] ContinueOutsideLoop: Clang rejects `continue` outside a loop
+// at parse time (Sema error), so it is impossible to build an AST with a bare
+// continue-outside-loop.  The defensive check in VisitContinueStmt (loopDepth
+// == 0) can never fire in practice.  No test is added because
+// clang::tooling::buildASTFromCode would return null for such code.
 
 // ---------------------------------------------------------------------------
 // Parameterized: Accepted constructs

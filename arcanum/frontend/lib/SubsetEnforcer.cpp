@@ -83,6 +83,11 @@ public:
     return true;
   }
 
+  // Note (SC-3/SC-4): The spec places loop_invariant/loop_variant validation
+  // in the Subset Enforcer, but contract annotations are parsed later in the
+  // pipeline (ContractParser + Lowering).  These checks are performed in
+  // LoopContractPass (Stage 5) where annotation data is available.
+
   bool TraverseForStmt(clang::ForStmt* stmt) {
     ++loopDepth;
     bool result =
