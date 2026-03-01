@@ -7,7 +7,7 @@
 namespace arcanum {
 
 /// Run MLIR passes on the Arc module.
-/// Slice 1: identity pass-through + MLIR verifier only.
+/// Includes LoopContractPass (auto-compute assigns, validate loop contracts).
 mlir::LogicalResult runPasses(mlir::ModuleOp module);
 
 } // namespace arcanum

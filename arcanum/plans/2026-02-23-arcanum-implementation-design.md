@@ -247,9 +247,9 @@ After Slice 1, features are added incrementally. Each slice extends the pipeline
 |-------|-------------|------------------------|
 | 1 | `int32_t`, `bool`, `if/else`, arithmetic, `requires`/`ensures`, `\result` | All (initial wiring) |
 | 2 | All integer types (`i8`-`i64`, `u8`-`u64`), `static_cast`, overflow modes | Dialect types, WhyML emitter, Subset Enforcer |
-| 3 | `for`/`while` loops, `loop_invariant`, `loop_variant`, `break`/`continue` | Lowering, Dialect ops, WhyML emitter |
-| 4 | Function calls (non-recursive), modular verification with callee contracts | Lowering, WhyML emitter |
-| 5 | `std::array<T,N>`, `std::span<T>`, bounds checking, `\forall`/`\exists` | Dialect types/ops, WhyML emitter, Contract Parser |
+| 3 | `for`/`while`/`do-while`, `break`/`continue`, `loop_invariant`/`loop_variant`/`loop_assigns`, labels, auto-inference, `LoopContractPass`, recursive WhyML emission | Lowering, Dialect ops, MLIR Passes, WhyML emitter, Contract Parser, Subset Enforcer |
+| 4 | Function calls (non-recursive), modular verification with callee contracts. **Loop-related:** function calls inside loop bodies become verifiable | Lowering, WhyML emitter |
+| 5 | `std::array<T,N>`, `std::span<T>`, bounds checking, `\forall`/`\exists`. **Loop-related:** range-based `for`, quantifiers in loop invariants (e.g. `\forall i; 0 <= i < n ==> arr[i] >= 0`) | Dialect types/ops, WhyML emitter, Contract Parser |
 | 6 | `struct`/`class`, field access, constructors | Dialect types, Lowering |
 | 7 | `std::expected<T,E>`, `std::optional<T>` | Dialect types, Lowering |
 | 8 | `//@ predicate`, `//@ logic`, ghost state | Contract Parser, Dialect ops, WhyML emitter |
@@ -257,6 +257,6 @@ After Slice 1, features are added incrementally. Each slice extends the pipeline
 | 10 | Templates (per-instantiation), `enum class`, `std::variant`/`std::visit` | Lowering, Subset Enforcer |
 | 11 | Totality mode (`//@ total`, `//@ decreases`, exhaustiveness) | New mode, Dialect, WhyML |
 | 12 | Floating-point (real arithmetic + `fp_safe`) | Dialect types, WhyML emitter |
-| 13 | MLIR optimization passes | Passes |
+| 13 | MLIR optimization passes. **Loop-related:** optional native WhyML loop emission as optimization over recursive functions | Passes, WhyML emitter |
 | 14 | Multi-file verification (header contracts, `//@ trusted`) | Frontend, CLI |
 | 15 | Full CLI, JSON output, trust report, `.arcanum.yaml` config | CLI, Report Generator |

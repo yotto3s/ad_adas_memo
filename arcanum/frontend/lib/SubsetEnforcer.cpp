@@ -83,20 +83,50 @@ public:
     return true;
   }
 
-  bool VisitForStmt(clang::ForStmt* stmt) {
-    addDiagnostic(stmt->getBeginLoc(), "for loops are not allowed in Slice 1");
+  // Note (SC-3/SC-4): The spec places loop_invariant/loop_variant validation
+  // in the Subset Enforcer, but contract annotations are parsed later in the
+  // pipeline (ContractParser + Lowering).  These checks are performed in
+  // LoopContractPass (Stage 5) where annotation data is available.
+
+  bool TraverseForStmt(clang::ForStmt* stmt) {
+    ++loopDepth;
+    bool result =
+        clang::RecursiveASTVisitor<SubsetVisitor>::TraverseForStmt(stmt);
+    --loopDepth;
+    return result;
+  }
+
+  bool TraverseWhileStmt(clang::WhileStmt* stmt) {
+    ++loopDepth;
+    bool result =
+        clang::RecursiveASTVisitor<SubsetVisitor>::TraverseWhileStmt(stmt);
+    --loopDepth;
+    return result;
+  }
+
+  bool TraverseDoStmt(clang::DoStmt* stmt) {
+    ++loopDepth;
+    bool result =
+        clang::RecursiveASTVisitor<SubsetVisitor>::TraverseDoStmt(stmt);
+    --loopDepth;
+    return result;
+  }
+
+  bool VisitBreakStmt(clang::BreakStmt* stmt) {
+    if (loopDepth == 0) {
+      addDiagnostic(stmt->getBeginLoc(),
+                    "break statement is only valid inside a loop");
+    }
     return true;
   }
 
-  bool VisitWhileStmt(clang::WhileStmt* stmt) {
-    addDiagnostic(stmt->getBeginLoc(),
-                  "while loops are not allowed in Slice 1");
-    return true;
-  }
-
-  bool VisitDoStmt(clang::DoStmt* stmt) {
-    addDiagnostic(stmt->getBeginLoc(),
-                  "do-while loops are not allowed in Slice 1");
+  // Defensive: Clang rejects `continue` outside loops at parse time,
+  // so loopDepth == 0 should never occur in a valid AST.
+  bool VisitContinueStmt(clang::ContinueStmt* stmt) {
+    if (loopDepth == 0) {
+      addDiagnostic(stmt->getBeginLoc(),
+                    "continue statement is only valid inside a loop");
+    }
     return true;
   }
 
@@ -486,6 +516,7 @@ private:
 
   clang::ASTContext& ctx;
   SubsetResult& result;
+  unsigned loopDepth = 0;
 };
 
 } // namespace

@@ -287,3 +287,146 @@ void IfOp::print(mlir::OpAsmPrinter& printer) {
   printer.printRegion(getThenRegion());
   printOptionalElseClause(printer, getElseRegion());
 }
+
+//===----------------------------------------------------------------------===//
+// LoopOp custom assembly format
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult LoopOp::parse(mlir::OpAsmParser& parser,
+                                mlir::OperationState& result) {
+  if (parser.parseOptionalAttrDict(result.attributes)) {
+    return mlir::failure();
+  }
+  auto* initRegion = result.addRegion();
+  auto* condRegion = result.addRegion();
+  auto* updateRegion = result.addRegion();
+  auto* bodyRegion = result.addRegion();
+  while (true) {
+    if (parser.parseOptionalKeyword("init").succeeded()) {
+      if (parser.parseRegion(*initRegion)) {
+        return mlir::failure();
+      }
+    } else if (parser.parseOptionalKeyword("cond").succeeded()) {
+      if (parser.parseRegion(*condRegion)) {
+        return mlir::failure();
+      }
+    } else if (parser.parseOptionalKeyword("update").succeeded()) {
+      if (parser.parseRegion(*updateRegion)) {
+        return mlir::failure();
+      }
+    } else if (parser.parseOptionalKeyword("body").succeeded()) {
+      if (parser.parseRegion(*bodyRegion)) {
+        return mlir::failure();
+      }
+    } else {
+      break;
+    }
+  }
+  return mlir::success();
+}
+
+void LoopOp::print(mlir::OpAsmPrinter& printer) {
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  if (!getInitRegion().empty()) {
+    printer << " init ";
+    printer.printRegion(getInitRegion());
+  }
+  if (!getCondRegion().empty()) {
+    printer << " cond ";
+    printer.printRegion(getCondRegion());
+  }
+  if (!getUpdateRegion().empty()) {
+    printer << " update ";
+    printer.printRegion(getUpdateRegion());
+  }
+  if (!getBodyRegion().empty()) {
+    printer << " body ";
+    printer.printRegion(getBodyRegion());
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// BreakOp custom assembly format + verifier
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult BreakOp::parse(mlir::OpAsmParser& parser,
+                                 mlir::OperationState& result) {
+  return parser.parseOptionalAttrDict(result.attributes);
+}
+
+void BreakOp::print(mlir::OpAsmPrinter& printer) {
+  printer.printOptionalAttrDict((*this)->getAttrs());
+}
+
+/// Verify that this BreakOp appears inside an arc.loop (CR-5).
+mlir::LogicalResult BreakOp::verify() {
+  auto* parentOp = (*this)->getParentOp();
+  while (parentOp != nullptr) {
+    if (llvm::isa<LoopOp>(parentOp)) {
+      return mlir::success();
+    }
+    parentOp = parentOp->getParentOp();
+  }
+  return emitOpError("must be nested inside an 'arc.loop' operation");
+}
+
+//===----------------------------------------------------------------------===//
+// ContinueOp custom assembly format + verifier
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult ContinueOp::parse(mlir::OpAsmParser& parser,
+                                    mlir::OperationState& result) {
+  return parser.parseOptionalAttrDict(result.attributes);
+}
+
+void ContinueOp::print(mlir::OpAsmPrinter& printer) {
+  printer.printOptionalAttrDict((*this)->getAttrs());
+}
+
+/// Verify that this ContinueOp appears inside an arc.loop (CR-5).
+mlir::LogicalResult ContinueOp::verify() {
+  auto* parentOp = (*this)->getParentOp();
+  while (parentOp != nullptr) {
+    if (llvm::isa<LoopOp>(parentOp)) {
+      return mlir::success();
+    }
+    parentOp = parentOp->getParentOp();
+  }
+  return emitOpError("must be nested inside an 'arc.loop' operation");
+}
+
+//===----------------------------------------------------------------------===//
+// ConditionOp custom assembly format
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult ConditionOp::parse(mlir::OpAsmParser& parser,
+                                     mlir::OperationState& result) {
+  mlir::OpAsmParser::UnresolvedOperand operand;
+  mlir::Type type;
+  if (parser.parseOperand(operand) ||
+      parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseColonType(type) ||
+      parser.resolveOperand(operand, type, result.operands)) {
+    return mlir::failure();
+  }
+  return mlir::success();
+}
+
+void ConditionOp::print(mlir::OpAsmPrinter& printer) {
+  printer << " " << getCondition();
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : " << getCondition().getType();
+}
+
+//===----------------------------------------------------------------------===//
+// YieldOp custom assembly format
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult YieldOp::parse(mlir::OpAsmParser& parser,
+                                 mlir::OperationState& result) {
+  return parser.parseOptionalAttrDict(result.attributes);
+}
+
+void YieldOp::print(mlir::OpAsmPrinter& printer) {
+  printer.printOptionalAttrDict((*this)->getAttrs());
+}

@@ -23,6 +23,10 @@ constexpr unsigned DECIMAL_BASE = 10;
 constexpr llvm::StringLiteral REQUIRES_PREFIX("requires:");
 constexpr llvm::StringLiteral ENSURES_PREFIX("ensures:");
 constexpr llvm::StringLiteral OVERFLOW_PREFIX("overflow:");
+constexpr llvm::StringLiteral LOOP_INVARIANT_PREFIX("loop_invariant:");
+constexpr llvm::StringLiteral LOOP_VARIANT_PREFIX("loop_variant:");
+constexpr llvm::StringLiteral LOOP_ASSIGNS_PREFIX("loop_assigns:");
+constexpr llvm::StringLiteral LABEL_PREFIX("label:");
 } // namespace
 
 ContractExprPtr ContractExpr::makeIntLiteral(int64_t val) {
@@ -380,6 +384,8 @@ std::optional<std::string> extractAnnotationPayload(llvm::StringRef line) {
   return trimmed.drop_front(1).ltrim().str();
 }
 
+} // namespace
+
 /// Extract //@ lines from a raw comment block and return them.
 std::vector<std::string> extractAnnotationLines(llvm::StringRef commentText) {
   std::vector<std::string> lines;
@@ -394,6 +400,45 @@ std::vector<std::string> extractAnnotationLines(llvm::StringRef commentText) {
   }
   return lines;
 }
+
+/// Parse comma-separated identifiers from a string.
+/// NOTE (CQ-2): Duplicates parseAssignsList in WhyMLEmitter.cpp.
+/// Consolidation deferred: different build targets use different container
+/// types.
+static std::vector<std::string>
+parseCommaSeparatedIdents(llvm::StringRef text) {
+  std::vector<std::string> result;
+  llvm::SmallVector<llvm::StringRef, 8> parts;
+  text.split(parts, ',');
+  for (auto& part : parts) {
+    auto trimmed = part.trim();
+    if (!trimmed.empty()) {
+      result.push_back(trimmed.str());
+    }
+  }
+  return result;
+}
+
+void applyLoopAnnotationLine(llvm::StringRef line, LoopContractInfo& info) {
+  if (line.starts_with(LOOP_INVARIANT_PREFIX)) {
+    auto expr = line.drop_front(LOOP_INVARIANT_PREFIX.size()).trim();
+    if (!info.invariant.empty()) {
+      info.invariant += " && ";
+    }
+    info.invariant += expr.str();
+  } else if (line.starts_with(LOOP_VARIANT_PREFIX)) {
+    info.variant = line.drop_front(LOOP_VARIANT_PREFIX.size()).trim().str();
+  } else if (line.starts_with(LOOP_ASSIGNS_PREFIX)) {
+    auto assigns = line.drop_front(LOOP_ASSIGNS_PREFIX.size()).trim();
+    auto newAssigns = parseCommaSeparatedIdents(assigns);
+    info.assigns.insert(info.assigns.end(), newAssigns.begin(),
+                        newAssigns.end());
+  } else if (line.starts_with(LABEL_PREFIX)) {
+    info.label = line.drop_front(LABEL_PREFIX.size()).trim().str();
+  }
+}
+
+namespace {
 
 /// Retrieve the raw annotation lines for a function declaration.
 /// Returns an empty vector if the declaration has no annotation comment.
