@@ -4,7 +4,7 @@
 
 ### 1.1 The Testing Gap
 
-Autonomous driving software must satisfy ASIL D — the highest automotive safety integrity level. At this level, the residual risk of a dangerous failure must be astronomically low (on the order of 10⁻⁸ per hour). Testing alone cannot demonstrate this. Even billions of driven kilometers leave statistical uncertainty far above what ASIL D demands. The gap between what testing can show and what the standard requires must be filled by mathematical proof.
+Autonomous driving software must satisfy ASIL D — the highest automotive safety integrity level. For the hardware side, ISO 26262 Part 5 sets a clear numerical target: the Probabilistic Metric for Hardware Failures (PMHF) must be below 10⁻⁸ per hour. For the software side, no equivalent numerical target exists — software faults are systematic, not random, so the standard manages them through process rigor rather than a failure rate. But the system-level expectation is the same: the risk of a dangerous failure must be astronomically low. Testing alone cannot demonstrate this. Even billions of driven kilometers leave statistical uncertainty far above what ASIL D demands. The gap between what testing can show and what the standard requires must be filled by mathematical proof.
 
 The challenge is that no single formal method covers the entire AD stack. The perception layer runs neural networks with billions of parameters — not amenable to theorem proving. The control layer runs deterministic algorithms — provable, but only if the proof covers physics, code, and runtime errors together. A practical architecture must combine these realities into a coherent safety argument.
 
@@ -12,9 +12,9 @@ The challenge is that no single formal method covers the entire AD stack. The pe
 
 ISO 26262 Part 6 (software development) is fundamentally **process-oriented**. It prescribes activities — requirements analysis, architectural design, unit testing, integration testing, code review — and recommends methods at each ASIL level. But it does not define what "correct software" means mathematically. The result is that software functional safety design relies heavily on designers' judgment and experience rather than on a rigorous theoretical foundation.
 
-Compare this with hardware functional safety. ISO 26262 Part 5 provides a clear probabilistic framework: failure rates are measured in FIT (failures per 10⁹ hours), diagnostic coverage is quantified as a percentage, and the Probabilistic Metric for Hardware Failures (PMHF) gives a single number that can be compared against a target. Hardware safety is a quantitative discipline.
+Compare this with hardware functional safety. As noted in Section 1.1, ISO 26262 Part 5 provides a clear probabilistic framework: failure rates in FIT, diagnostic coverage percentages, and PMHF as a single comparable number. Hardware safety is a quantitative discipline.
 
-Software safety has no equivalent. Systematic software faults — bugs — cannot be modeled probabilistically in the same way. A bug is either present or absent; it does not occur randomly. ISO 26262 acknowledges this by treating software faults as systematic rather than random, but it does not provide an alternative mathematical framework. In practice, the safety argument for software reduces to: "we followed the prescribed process, we achieved the required test coverage, we performed the required reviews." This is a process argument, not a property argument.
+Software safety has no equivalent metric. As Section 1.1 also noted, software faults are systematic — a bug is either present or absent, it does not occur randomly. ISO 26262 acknowledges this distinction but does not provide an alternative mathematical framework for software. In practice, the safety argument for software reduces to: "we followed the prescribed process, we achieved the required test coverage, we performed the required reviews." This is a process argument, not a property argument.
 
 The theoretical foundations for a property-based approach do exist:
 
