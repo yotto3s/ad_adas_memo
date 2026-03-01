@@ -1,4 +1,4 @@
-# End-to-End Proved Software Architecture for Autonomous Driving
+# End-to-End Proven Software Architecture for Autonomous Driving
 
 ## 1. Introduction & Vision
 
@@ -6,13 +6,13 @@
 
 Autonomous driving software is among the most complex safety-critical systems ever built. It spans sensor processing, machine learning, planning, control, and actuation -- each introducing distinct failure modes. Traditional testing-based verification cannot provide the mathematical guarantees required for ASIL D safety integrity levels, and no single formal method covers the entire stack.
 
-### 1.2 The Solution: Proved Core + Monitored Envelope
+### 1.2 The Solution: Proven Core + Monitored Envelope
 
 This document describes an architecture that achieves end-to-end safety assurance by partitioning the AD/ADAS software into two concentric zones:
 
-**Zone 1: The Proved Core** -- Components where every safety-relevant property is mathematically proved. This includes control algorithms, safety monitors, and the software implementation layer. Correctness is established through formal verification: theorem proving, abstract interpretation, and deductive verification.
+**Zone 1: The Proven Core** -- Components where every safety-relevant property is mathematically proved. This includes control algorithms, safety monitors, and the software implementation layer. Correctness is established through formal verification: theorem proving, abstract interpretation, and deductive verification.
 
-**Zone 2: The Monitored Envelope** -- Components where formal proof of the primary function is infeasible (neural network perception, complex motion planning, world prediction), but safety is ensured by **proved monitors that live in Zone 1** and constrain the envelope's outputs at runtime.
+**Zone 2: The Monitored Envelope** -- Components where formal proof of the primary function is infeasible (neural network perception, complex motion planning, world prediction), but safety is ensured by **proven monitors that live in Zone 1** and constrain the envelope's outputs at runtime.
 
 The architectural insight is: *you do not need to prove the perception neural network is correct -- you need to prove that the safety monitor will catch it when it is wrong, and that the fallback response is safe.*
 
@@ -27,7 +27,7 @@ The architectural insight is: *you do not need to prove the perception neural ne
 |                       | outputs constrained  |
 |                       v                      |
 |  +----------------------------------------+  |
-|  |      Zone 1: The Proved Core           |  |
+|  |      Zone 1: The Proven Core           |  |
 |  |                                        |  |
 |  |  Verified safety monitors              |  |
 |  |  Verified control algorithms           |  |
@@ -90,7 +90,7 @@ Contracts are expressed in a hierarchy of formalisms depending on the layer:
 
 ## 3. Foundation Assumptions
 
-These layers are outside the direct scope of this architecture (handled by suppliers and platform providers), but the proved core's safety argument depends on their guarantees. Each is treated as an external contract: we specify what we assume, how we validate the assumption, and what breaks if it is violated.
+These layers are outside the direct scope of this architecture (handled by suppliers and platform providers), but the proven core's safety argument depends on their guarantees. Each is treated as an external contract: we specify what we assume, how we validate the assumption, and what breaks if it is violated.
 
 ### 3.1 Hardware
 
@@ -160,7 +160,7 @@ These layers are outside the direct scope of this architecture (handled by suppl
 
 ---
 
-## 4. Zone 1: The Proved Core
+## 4. Zone 1: The Proven Core
 
 This zone contains all components for which mathematical proof of correctness is both required and achievable. Every property claimed here must be backed by a machine-checked proof or a sound static analysis result.
 
@@ -279,7 +279,7 @@ When ODD boundary is crossed: initiate graceful degradation (Section 6.3).
 Zone 2 contains components where formal proof of the primary function is infeasible, but safety is achieved through the combination of:
 1. **Best-effort correctness**: Statistical validation, testing, simulation
 2. **Formal contracts**: Precisely specified input/output requirements
-3. **Zone 1 monitors**: Proved runtime checks that catch violations and trigger safe fallback
+3. **Zone 1 monitors**: Proven runtime checks that catch violations and trigger safe fallback
 
 ### 5.1 Sensor Modeling & Perception Assurance
 
@@ -339,7 +339,7 @@ This provides the probabilistic contracts needed for the sensor/perception layer
 #### 5.1.5 Sensor Fusion Verification
 
 Multi-sensor fusion must preserve or improve individual sensor guarantees:
-- **Proved fusion bounds**: If sensor A has position error <= 0.5m and sensor B has position error <= 0.3m, prove the fused estimate has error <= X
+- **Proven fusion bounds**: If sensor A has position error <= 0.5m and sensor B has position error <= 0.3m, prove the fused estimate has error <= X
 - **Redundancy analysis**: Prove that the system remains safe with any single sensor failed
 - Methods: Bayesian fusion with verified interval bounds, Dempster-Shafer theory for multi-source evidence combination
 
@@ -451,7 +451,7 @@ HD map accuracy and freshness are assumptions of the planning and control layers
 
 ## 6. The Bridge: How Zone 1 Constrains Zone 2
 
-This section describes the architectural patterns that connect the proved core to the monitored envelope, making the overall system safe despite unproved components.
+This section describes the architectural patterns that connect the proven core to the monitored envelope, making the overall system safe despite unproved components.
 
 ### 6.1 Safety Envelope Enforcement Pattern
 
@@ -490,7 +490,7 @@ Systematic process linking Layer 1 proofs to runtime enforcement:
 **Step 2**: ModelPlex extracts monitor condition from the proof
 - Input: dL proof
 - Output: arithmetic formula phi_monitor over observable state variables
-- Proved property: "If phi_monitor holds at each control step, the offline safety proof applies to the actual execution"
+- Proven property: "If phi_monitor holds at each control step, the offline safety proof applies to the actual execution"
 
 **Step 3**: Implement monitor condition as runtime check
 - The monitor formula is a conjunction of arithmetic inequalities
@@ -566,7 +566,7 @@ Individual layer proofs must compose into a coherent system-level safety argumen
 ```
 G1: "Vehicle is safe within the defined ODD"
 |
-+-- S1: "Argued over proved core + monitored envelope architecture"
++-- S1: "Argued over proven core + monitored envelope architecture"
 |   |
 |   +-- G2: "Control algorithm maintains safety properties"
 |   |   Evidence: KeYmaera X proof (Layer 1)

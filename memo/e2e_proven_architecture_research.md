@@ -1,16 +1,16 @@
-# End-to-End Proved Software Architecture: Research Agenda
+# End-to-End Proven Software Architecture: Research Agenda
 
 ## Overview
 
-This document identifies the research areas that must be investigated to realize an end-to-end proved software architecture for autonomous driving. It extends the existing work on three-layer formal verification, anomaly path derivation, and the Arcanum verification tool.
+This document identifies the research areas that must be investigated to realize an end-to-end proven software architecture for autonomous driving. It extends the existing work on three-layer formal verification, anomaly path derivation, and the Arcanum verification tool.
 
-The architecture follows a **proved core + monitored envelope** pattern:
-- **Zone 1 (Proved Core)**: Control algorithms, safety monitors, and software implementation -- all formally verified
-- **Zone 2 (Monitored Envelope)**: Perception (neural networks), planning, world modeling -- safety ensured by proved monitors in Zone 1
+The architecture follows a **proven core + monitored envelope** pattern:
+- **Zone 1 (Proven Core)**: Control algorithms, safety monitors, and software implementation -- all formally verified
+- **Zone 2 (Monitored Envelope)**: Perception (neural networks), planning, world modeling -- safety ensured by proven monitors in Zone 1
 
 The unifying principle is **contract-based composition**: assume-guarantee contracts at every component boundary, with the end-to-end safety argument as the transitive closure of all contracts being discharged.
 
-**Full design document**: `plans/2026-02-27-e2e-proved-architecture-design.md`
+**Full design document**: `plans/2026-02-27-e2e-proven-architecture-design.md`
 
 ---
 
@@ -46,11 +46,11 @@ Layer 1 safety proofs depend on assumptions about sensor/perception accuracy (e.
 
 ### Problem
 
-The safety envelope enforcement pattern is the core mechanism that makes the proved core + monitored envelope approach work. Zone 2 produces candidate outputs; Zone 1 filters check them against formal safety contracts and substitute verified fallbacks when violated. This pattern must be precisely defined and its properties formally established.
+The safety envelope enforcement pattern is the core mechanism that makes the proven core + monitored envelope approach work. Zone 2 produces candidate outputs; Zone 1 filters check them against formal safety contracts and substitute verified fallbacks when violated. This pattern must be precisely defined and its properties formally established.
 
 ### What to Investigate
 
-- **Pattern formal definition**: Six properties that must be proved about the safety filter -- soundness (if accepted, safety holds), completeness (all conditions checked), implementation correctness (code matches formula), runtime error freedom (no undefined behavior), timeliness (WCET budget), availability (low false rejection rate).
+- **Pattern formal definition**: Six properties that must be proven about the safety filter -- soundness (if accepted, safety holds), completeness (all conditions checked), implementation correctness (code matches formula), runtime error freedom (no undefined behavior), timeliness (WCET budget), availability (low false rejection rate).
 
 - **ModelPlex runtime monitor derivation**: The 5-step pipeline from KeYmaera X offline proof to verified runtime check. How monitor conditions are automatically extracted from dL proofs. Concrete examples (adaptive cruise control monitor derivation).
 
@@ -136,7 +136,7 @@ For Level 3+ autonomy, the system cannot simply shut down on fault detection -- 
 
 - **Four-level hierarchy design**: Level 0 (full autonomy) -> Level 1 (degraded autonomy, simplified planner) -> Level 2 (Minimal Risk Condition, controlled stop) -> Level 3 (emergency stop). For each: active components, safety proof method, ODD assumed.
 
-- **Per-level safety proofs**: Level 0 uses mixed deterministic/probabilistic argument. Level 1 must be fully formally proved (simplified system is small enough). Levels 2-3 use offline reachability analysis.
+- **Per-level safety proofs**: Level 0 uses mixed deterministic/probabilistic argument. Level 1 must be fully formally proven (simplified system is small enough). Levels 2-3 use offline reachability analysis.
 
 - **Transition logic verification**: Model transitions as a timed automaton. Verify with UPPAAL/NuSMV: no unprotected states, always able to degrade, deterministic transitions. LTL/CTL specifications for timing properties.
 

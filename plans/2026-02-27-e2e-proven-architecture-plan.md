@@ -1,8 +1,8 @@
-# End-to-End Proved Architecture Research Memos Implementation Plan
+# End-to-End Proven Architecture Research Memos Implementation Plan
 
-**Goal:** Produce 10 standalone research memos that expand each major topic from the end-to-end proved software architecture design document into a detailed, self-contained research document, matching the depth and style of the existing memos in the repository.
+**Goal:** Produce 10 standalone research memos that expand each major topic from the end-to-end proven software architecture design document into a detailed, self-contained research document, matching the depth and style of the existing memos in the repository.
 
-**Architecture:** Each memo takes one section (or group of closely related sections) from the design document at `/home/yotto/ad-adas-memo/.worktrees/memo/plans/2026-02-27-e2e-proved-architecture-design.md` and expands it into a full research document of 300-550 lines. Each memo follows the conventions established by the existing memos: a clear problem statement, detailed technical exposition with formulas and examples, state-of-the-art analysis with tool and paper references, open research challenges, and explicit connections to the other memos in the project. The priority ordering follows Section 9 of the design document.
+**Architecture:** Each memo takes one section (or group of closely related sections) from the design document at `/home/yotto/ad-adas-memo/.worktrees/memo/plans/2026-02-27-e2e-proven-architecture-design.md` and expands it into a full research document of 300-550 lines. Each memo follows the conventions established by the existing memos: a clear problem statement, detailed technical exposition with formulas and examples, state-of-the-art analysis with tool and paper references, open research challenges, and explicit connections to the other memos in the project. The priority ordering follows Section 9 of the design document.
 
 **Tech Stack:** Markdown research documents; no code implementation. References to formal methods tools (KeYmaera X, Marabou, CORA, Frama-C, Arcanum, Astree, etc.) are descriptive, not executable.
 
@@ -132,7 +132,7 @@ Create the file with 450-550 lines covering the following topics.
 **Section structure and required content:**
 
 1. **Overview** (20-30 lines)
-   - The safety envelope enforcement pattern is the core architectural mechanism that makes the "proved core + monitored envelope" approach work. It is the bridge between Zone 1 (proved) and Zone 2 (monitored).
+   - The safety envelope enforcement pattern is the core architectural mechanism that makes the "proven core + monitored envelope" approach work. It is the bridge between Zone 1 (proved) and Zone 2 (monitored).
    - Pattern: Zone 2 component produces candidate output -> Zone 1 safety filter checks against formal safety contract -> accept and forward, or reject and substitute verified fallback.
    - Connection to design doc Section 6.1, 6.2, and 4.4.
 
@@ -152,7 +152,7 @@ Create the file with 450-550 lines covering the following topics.
    - Full explanation of the ModelPlex pipeline (design doc Section 6.2):
      - Step 1: Offline safety proof using KeYmaera X (hybrid program + dL formula -> machine-checked proof)
      - Step 2: ModelPlex extracts monitor condition (arithmetic formula phi_monitor over observable state variables)
-     - Step 3: Proved property: "If phi_monitor holds at each control step, offline safety proof applies to actual execution"
+     - Step 3: Proven property: "If phi_monitor holds at each control step, offline safety proof applies to actual execution"
      - Step 4: Implement monitor condition as runtime check (simple arithmetic comparisons)
      - Step 5: Verify monitor implementation through Layers 2 and 3
    - Concrete example: derive monitor condition for adaptive cruise control. Show the dL formula, the hybrid program, and the extracted monitor condition as arithmetic inequalities.
@@ -809,7 +809,7 @@ Create the file with 350-450 lines covering the following topics.
 
 1. **Overview** (20-30 lines)
    - A cybersecurity breach can violate safety assumptions. Spoofed sensor data violates `A_sensor`; injected control commands violate `A_impl`; manipulated calibration parameters invalidate Layer 1 proofs.
-   - Current practice treats cybersecurity (ISO 21434, UN R155/R156) and safety (ISO 26262) as separate concerns. This memo explores their integration within the proved architecture.
+   - Current practice treats cybersecurity (ISO 21434, UN R155/R156) and safety (ISO 26262) as separate concerns. This memo explores their integration within the proven architecture.
    - Connection to design doc Section 8.1.
 
 2. **Threat Landscape for Safety-Critical AD Systems** (50-70 lines)
@@ -1033,7 +1033,7 @@ Create the file with 400-500 lines covering the following topics.
 
 1. **Overview** (20-30 lines)
    - Neural networks are the least verifiable components in the AD stack. Global correctness proofs are infeasible. However, specific safety-relevant properties CAN be verified for bounded input regions.
-   - This memo surveys the state of the art in NN verification, focusing on properties relevant to the proved architecture.
+   - This memo surveys the state of the art in NN verification, focusing on properties relevant to the proven architecture.
    - Connection to design doc Section 5.1.3 and the property-specific verification research direction.
 
 2. **What is Verifiable Today** (60-80 lines)
