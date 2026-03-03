@@ -4,9 +4,9 @@
 
 This document identifies the research areas that must be investigated to realize an end-to-end proven software architecture for autonomous driving. It extends the existing work on three-layer formal verification, anomaly path derivation, and the Arcanum verification tool.
 
-The architecture follows a **proven core + monitored envelope** pattern:
-- **Zone 1 (Proven Core)**: Control algorithms, safety monitors, and software implementation -- all formally verified
-- **Zone 2 (Monitored Envelope)**: Perception (neural networks), planning, world modeling -- safety ensured by proven monitors in Zone 1
+The architecture follows a **ML Core + Safety Envelope** pattern:
+- **Safety Envelope**: Control algorithms, safety monitors, and software implementation -- all formally verified
+- **ML Core**: Perception (neural networks), planning, world modeling -- safety ensured by proven monitors in the Safety Envelope
 
 The unifying principle is **contract-based composition**: assume-guarantee contracts at every component boundary, with the end-to-end safety argument as the transitive closure of all contracts being discharged.
 
@@ -46,7 +46,7 @@ Layer 1 safety proofs depend on assumptions about sensor/perception accuracy (e.
 
 ### Problem
 
-The safety envelope enforcement pattern is the core mechanism that makes the proven core + monitored envelope approach work. Zone 2 produces candidate outputs; Zone 1 filters check them against formal safety contracts and substitute verified fallbacks when violated. This pattern must be precisely defined and its properties formally established.
+The safety envelope enforcement pattern is the core mechanism that makes the ML Core + Safety Envelope approach work. The ML Core produces candidate outputs; Safety Envelope filters check them against formal safety contracts and substitute verified fallbacks when violated. This pattern must be precisely defined and its properties formally established.
 
 ### What to Investigate
 
@@ -87,7 +87,7 @@ The Operational Design Domain defines the boundary of the entire safety guarante
 
 - **Mapping ODD parameters to Layer 1 proof assumptions**: Traceability table from each proof assumption to a measurable ODD parameter. Challenge: some assumptions are indirect (e.g., "other vehicles behave rationally" cannot be directly measured).
 
-- **Runtime ODD boundary monitoring**: For each ODD parameter, a runtime monitoring mechanism (rain sensor, visibility estimation, sensor self-diagnostics, localization quality). Hysteresis and debouncing for boundary transitions. The monitor itself is a Zone 1 component (verified through Layers 2+3).
+- **Runtime ODD boundary monitoring**: For each ODD parameter, a runtime monitoring mechanism (rain sensor, visibility estimation, sensor self-diagnostics, localization quality). Hysteresis and debouncing for boundary transitions. The monitor itself is a Safety Envelope component (verified through Layers 2+3).
 
 - **Regulatory alignment**: UN R157 formal ODD requirements for type approval. ISO 34503 (ODD taxonomy standard, in development). Machine-readable format for regulatory submission.
 
@@ -184,11 +184,11 @@ Current ModelPlex monitors handle single ego vehicle with perfect state observat
 
 ### Problem
 
-Zone 1 provides deterministic guarantees ("always safe IF assumptions hold"). Zone 2 provides probabilistic evidence ("perception meets contract with probability >= p"). No existing framework combines both into a quantitative system-level safety argument.
+The Safety Envelope provides deterministic guarantees ("always safe IF assumptions hold"). The ML Core provides probabilistic evidence ("perception meets contract with probability >= p"). No existing framework combines both into a quantitative system-level safety argument.
 
 ### What to Investigate
 
-- **Scenario decomposition**: P(unsafe) = P(Zone 2 incorrect) * P(monitor miss | Zone 2 incorrect). The deterministic proofs (Zone 1) eliminate certain scenarios entirely, leaving only the probabilistic residual.
+- **Scenario decomposition**: P(unsafe) = P(ML Core incorrect) * P(monitor miss | ML Core incorrect). The deterministic proofs (Safety Envelope) eliminate certain scenarios entirely, leaving only the probabilistic residual.
 
 - **GSN (Goal Structuring Notation) safety case**: Structured argument connecting all individual proofs. G1 (vehicle safe in ODD) decomposed into sub-goals, each backed by formal proof or statistical evidence. Machine-checkable safety cases.
 
@@ -196,7 +196,7 @@ Zone 1 provides deterministic guarantees ("always safe IF assumptions hold"). Zo
 
 - **Gaps in ISO 26262 and ISO 21448**: Neither standard provides a method for computing P(unsafe) when some components have deterministic proofs and others have statistical bounds. Potential PMSF (Probabilistic Metric for Software Failures) as an extension of PMHF.
 
-- **ASIL decomposition across zones**: Zone 2 components at ASIL B + Zone 1 monitors at ASIL D. Independence requirements (functional, data, execution) and how to demonstrate them in the architecture.
+- **ASIL decomposition across zones**: ML Core components at ASIL B + Safety Envelope monitors at ASIL D. Independence requirements (functional, data, execution) and how to demonstrate them in the architecture.
 
 ### Key References
 
