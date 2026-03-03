@@ -132,8 +132,8 @@ Create the file with 450-550 lines covering the following topics.
 **Section structure and required content:**
 
 1. **Overview** (20-30 lines)
-   - The safety envelope enforcement pattern is the core architectural mechanism that makes the "proven core + monitored envelope" approach work. It is the bridge between Zone 1 (proved) and Zone 2 (monitored).
-   - Pattern: Zone 2 component produces candidate output -> Zone 1 safety filter checks against formal safety contract -> accept and forward, or reject and substitute verified fallback.
+   - The safety envelope enforcement pattern is the core architectural mechanism that makes the "ML Core + Safety Envelope" approach work. It is the bridge between the Safety Envelope (proved) and the ML Core (monitored).
+   - Pattern: ML Core component produces candidate output -> Safety Envelope safety filter checks against formal safety contract -> accept and forward, or reject and substitute verified fallback.
    - Connection to design doc Section 6.1, 6.2, and 4.4.
 
 2. **Pattern Definition and Formal Properties** (80-100 lines)
@@ -282,7 +282,7 @@ Create the file with 350-450 lines covering the following topics.
      - Localization quality: GNSS accuracy estimate, map-matching confidence
    - Define hysteresis and debouncing for ODD boundary transitions (avoid oscillation at boundaries).
    - When ODD boundary is approached: tighten safety margins. When ODD is exited: trigger graceful degradation (link to Task 5).
-   - Verification of ODD monitor: the monitor itself is a Zone 1 component, verified through Layers 2 and 3.
+   - Verification of ODD monitor: the monitor itself is a Safety Envelope component, verified through Layers 2 and 3.
 
 6. **Regulatory Submission Considerations** (30-40 lines)
    - UN R157 (ALKS): requires formal ODD definition for type approval. Discuss the requirements.
@@ -471,7 +471,7 @@ Create the file with 350-450 lines covering the following topics.
 
 2. **Four-Level Degradation Hierarchy** (80-100 lines)
    - Describe each level in detail:
-     - **Level 0 (Full Autonomy)**: Zone 2 active (NN perception + complex planner). Zone 1 monitors GREEN. Safety argument: Zone 1 monitors + Zone 2 statistical evidence.
+     - **Level 0 (Full Autonomy)**: ML Core active (NN perception + complex planner). Safety Envelope monitors GREEN. Safety argument: Safety Envelope monitors + ML Core statistical evidence.
      - **Level 1 (Degraded Autonomy)**: Simplified perception, verified simple planner, reduced speed/ODD. Safety argument: full formal proof of simplified system.
      - **Level 2 (Minimal Risk Condition)**: Controlled stop in safe location. Pre-planned MRC trajectory verified offline. Safety argument: reachability analysis of MRC trajectory.
      - **Level 3 (Emergency Stop)**: Immediate controlled braking to standstill. Safety argument: braking dynamics reachability analysis.
@@ -479,7 +479,7 @@ Create the file with 350-450 lines covering the following topics.
    - The key invariant: the system can ALWAYS reach at least Level 3 (emergency stop is always available).
 
 3. **Per-Level Safety Proof Requirements** (60-80 lines)
-   - Level 0: safety relies on Zone 1 monitors being sound and complete (proved) + Zone 2 meeting statistical contracts (validated). Mixed deterministic/probabilistic argument (link to Task 7).
+   - Level 0: safety relies on Safety Envelope monitors being sound and complete (proved) + ML Core meeting statistical contracts (validated). Mixed deterministic/probabilistic argument (link to Task 7).
    - Level 1: safety must be FULLY formally proved (all three layers). This is achievable because the simplified system is small enough for complete verification.
    - Level 2: MRC trajectory safety is proved offline using reachability analysis. Implementation of MRC trajectory tracking is verified through Layers 2 and 3.
    - Level 3: braking dynamics proved safe via reachability analysis. Braking controller implementation verified through Layers 2 and 3.
@@ -687,19 +687,19 @@ Create the file with 400-500 lines covering the following topics.
 **Section structure and required content:**
 
 1. **Overview** (20-30 lines)
-   - Zone 1 provides deterministic guarantees ("always safe IF assumptions hold"). Zone 2 provides probabilistic evidence ("perception meets contract with probability >= p"). The system-level safety argument must combine both.
+   - The Safety Envelope provides deterministic guarantees ("always safe IF assumptions hold"). The ML Core provides probabilistic evidence ("perception meets contract with probability >= p"). The system-level safety argument must combine both.
    - Current safety standards (ISO 26262, ISO/PAS 21448) handle deterministic and probabilistic evidence separately. A unified quantitative framework is an open research problem.
    - Connection to design doc Section 7.1, 7.2, 7.3.
 
 2. **Scenario Decomposition** (60-80 lines)
    - Decompose end-to-end failure into mutually exclusive scenarios (from design doc Section 7.2):
-     - Scenario A: Zone 2 correct AND Zone 1 processes correctly -> Safe (deterministic)
-     - Scenario B: Zone 2 incorrect BUT Zone 1 monitor detects it AND fallback safe -> Safe (deterministic, by monitor + fallback proofs)
-     - Scenario C: Zone 2 incorrect AND Zone 1 monitor fails to detect -> UNSAFE
-   - `P(unsafe) = P(Zone 2 incorrect) * P(monitor miss | Zone 2 incorrect)`
+     - Scenario A: ML Core correct AND Safety Envelope processes correctly -> Safe (deterministic)
+     - Scenario B: ML Core incorrect BUT Safety Envelope monitor detects it AND fallback safe -> Safe (deterministic, by monitor + fallback proofs)
+     - Scenario C: ML Core incorrect AND Safety Envelope monitor fails to detect -> UNSAFE
+   - `P(unsafe) = P(ML Core incorrect) * P(monitor miss | ML Core incorrect)`
    - Discuss each term:
-     - `P(Zone 2 incorrect)`: bounded by perception contract validation (statistical evidence, conformal prediction bounds from Task 1).
-     - `P(monitor miss | Zone 2 incorrect)`: depends on monitor coverage. For model-based monitors (ModelPlex): if error violates dL model assumptions, monitor detects with probability 1. Only errors consistent with model but outside safety envelope are missed.
+     - `P(ML Core incorrect)`: bounded by perception contract validation (statistical evidence, conformal prediction bounds from Task 1).
+     - `P(monitor miss | ML Core incorrect)`: depends on monitor coverage. For model-based monitors (ModelPlex): if error violates dL model assumptions, monitor detects with probability 1. Only errors consistent with model but outside safety envelope are missed.
    - This decomposition makes the problem tractable: instead of proving the entire system, prove the deterministic parts formally and bound the probabilistic parts statistically.
 
 3. **GSN Safety Case Structure** (60-80 lines)
@@ -718,7 +718,7 @@ Create the file with 400-500 lines covering the following topics.
    - For a single safety property (e.g., collision avoidance):
      ```
      P(collision) = P(perception error exceeds contract) * P(monitor miss | perception error)
-                  + P(SW bug in Zone 1) * (proved to be 0 by formal verification)
+                  + P(SW bug in Safety Envelope) * (proved to be 0 by formal verification)
                   + P(HW fault undetected) * P(safety impact | HW fault)
      ```
    - For multiple safety properties: treat each independently (conservative) or model correlations.
@@ -737,10 +737,10 @@ Create the file with 400-500 lines covering the following topics.
 
 6. **ASIL Decomposition Across Zones** (40-60 lines)
    - From design doc Section 7.3:
-     - Zone 2 (perception, planning): ASIL B for primary function.
-     - Zone 1 monitors: ASIL D for safety mechanism.
-     - Zone 1 core: ASIL D.
-   - Independence requirements for ASIL decomposition: functional, data, execution independence between Zone 1 and Zone 2.
+     - ML Core (perception, planning): ASIL B for primary function.
+     - Safety Envelope monitors: ASIL D for safety mechanism.
+     - Safety Envelope core: ASIL D.
+   - Independence requirements for ASIL decomposition: functional, data, execution independence between the Safety Envelope and the ML Core.
    - Discuss how independence is achieved in the architecture: separate cores/partitions, separate code, verified input integrity.
    - Reference: ISO 26262 Part 9 (ASIL-oriented and safety-oriented analyses), Annex D (ASIL decomposition).
 
@@ -751,9 +751,9 @@ Create the file with 400-500 lines covering the following topics.
    - Machine-checkable safety cases: GSN that can be automatically verified for completeness and consistency.
 
 8. **Connection to Other Memos** (20-30 lines)
-   - Link to `three_layer_formal_verification.md`: the three layers provide the deterministic evidence for Zone 1 goals.
+   - Link to `three_layer_formal_verification.md`: the three layers provide the deterministic evidence for Safety Envelope goals.
    - Link to `deriving_anomarly_path_en.md`: FMEDA-style analysis for HW fault contribution to P(unsafe).
-   - Link to perception contracts (Task 1): P(Zone 2 incorrect) comes from perception contract validation.
+   - Link to perception contracts (Task 1): P(ML Core incorrect) comes from perception contract validation.
    - Link to safety envelope (Task 2): monitor soundness is the deterministic component that bounds P(monitor miss).
 
 **Key references to research:**
@@ -834,7 +834,7 @@ Create the file with 350-450 lines covering the following topics.
      - Determine the safety impact (which Layer 1 proofs are invalidated).
      - Define cybersecurity mitigation as a safety mechanism with its own contract.
    - Example: GPS spoofing -> violates localization contract -> invalidates Lane 1 proof of lane keeping -> Mitigation: cross-sensor consistency check (camera-based localization vs. GPS) -> Mitigation contract: "If GPS position deviates from camera-based position by more than X meters, flag localization as degraded."
-   - The mitigation becomes a Zone 1 safety monitor (verified through Layers 2 and 3).
+   - The mitigation becomes a Safety Envelope safety monitor (verified through Layers 2 and 3).
 
 5. **Attack Detection as Safety Monitoring** (50-70 lines)
    - Key insight: attack detection and safety monitoring share the same architectural pattern.
