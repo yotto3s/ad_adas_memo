@@ -68,25 +68,28 @@ This memo introduces an architecture that addresses all four gaps. It is called 
 
 ---
 
-## 2. Solution Overview: Proven Core + Monitored Envelope
+## 2. Solution Overview: ML Core + Safety Envelope
 
-The architecture partitions the AD/ADAS software into two concentric zones:
+The architecture partitions the AD/ADAS software into two concentric layers:
 
 ```
 +--------------------------------------------------+
-|            Zone 2: Monitored Envelope             |
+|            Safety Envelope                        |
 |                                                   |
-|   Perception (neural networks, sensor fusion)     |
-|   Planning (behavior planning, motion planning)   |
-|   Prediction (world model, intent estimation)     |
+|   Control algorithms (verified)                   |
+|   Safety monitors (verified)                      |
+|   Fallback controllers (verified)                 |
+|   ODD boundary monitors (verified)                |
 |                                                   |
 |   +-----------------------------------------+     |
-|   |        Zone 1: Proven Core              |     |
+|   |        ML Core                          |     |
 |   |                                         |     |
-|   |   Control algorithms (verified)         |     |
-|   |   Safety monitors (verified)            |     |
-|   |   Fallback controllers (verified)       |     |
-|   |   ODD boundary monitors (verified)      |     |
+|   |   Perception (neural networks,          |     |
+|   |     sensor fusion)                      |     |
+|   |   Planning (behavior planning,          |     |
+|   |     motion planning)                    |     |
+|   |   Prediction (world model,              |     |
+|   |     intent estimation)                  |     |
 |   +-----------------------------------------+     |
 |                                                   |
 +--------------------------------------------------+
@@ -94,19 +97,19 @@ The architecture partitions the AD/ADAS software into two concentric zones:
                     Actuators
 ```
 
-**Zone 1 (Proven Core)**: Every safety-relevant property is mathematically proven. Control algorithms, safety monitors, and fallback controllers live here. Their correctness is established through formal verification — theorem proving, deductive verification, and abstract interpretation.
+**Safety Envelope**: Every safety-relevant property is mathematically proven. Control algorithms, safety monitors, and fallback controllers live here. Their correctness is established through formal verification — theorem proving, deductive verification, and abstract interpretation.
 
-**Zone 2 (Monitored Envelope)**: Components where formal proof of the primary function is infeasible. Neural network perception, complex motion planning, and world prediction live here. Safety is not proven for these components directly. Instead, **proven monitors in Zone 1 constrain Zone 2's outputs at runtime**.
+**ML Core**: Components where formal proof of the primary function is infeasible. Neural network perception, complex motion planning, and world prediction live here. Safety is not proven for these components directly. Instead, **proven monitors in the Safety Envelope constrain the ML Core's outputs at runtime**.
 
 The key insight: *you do not need to prove the perception neural network is correct. You need to prove that the safety monitor will catch it when it is wrong, and that the fallback response is safe.*
 
-This separation means the most complex and rapidly evolving parts of the stack (ML models, planning heuristics) can be developed and updated without invalidating the safety proof. Only Zone 1 changes require re-verification.
+This separation means the most complex and rapidly evolving parts of the stack (ML models, planning heuristics) can be developed and updated without invalidating the safety proof. Only Safety Envelope changes require re-verification.
 
 ---
 
 ## 3. Three-Layer Formal Verification
 
-Zone 1 components are verified through three layers of proof, each answering a different question:
+Safety Envelope components are verified through three layers of proof, each answering a different question:
 
 ```
 +------------------------------------------------------------------+
@@ -188,18 +191,18 @@ When a component is updated (e.g., a new perception model), only its contract ne
 
 ## 5. Safety Envelope Enforcement
 
-The mechanism that makes Zone 2 safe is the **safety envelope enforcement pattern**:
+The mechanism that makes the ML Core safe is the **safety envelope enforcement pattern**:
 
 ```
                     +-------------------+
-                    |    Zone 2         |
+                    |    ML Core        |
                     |  (Perception,     |
   Sensor data ----> |   Planning)       |----> Candidate output
                     +-------------------+
                                               |
                                               v
                                      +----------------+
-                                     | Safety Monitor |  <-- Zone 1
+                                     | Safety Monitor |  <-- Safety Envelope
                                      | (Proven)       |      (Verified)
                                      +----------------+
                                         |          |
@@ -214,7 +217,7 @@ The mechanism that makes Zone 2 safe is the **safety envelope enforcement patter
                                      +----------------+
 ```
 
-Zone 2 produces candidate outputs (trajectories, control commands). The safety monitor — a Zone 1 component, formally verified — checks whether the candidate satisfies the safety contracts. If it does, the candidate is passed through. If not, a pre-verified fallback is substituted.
+The ML Core produces candidate outputs (trajectories, control commands). The safety monitor — a Safety Envelope component, formally verified — checks whether the candidate satisfies the safety contracts. If it does, the candidate is passed through. If not, a pre-verified fallback is substituted.
 
 The safety monitor itself is derived from the Layer 1 proof. The KeYmaera X tool can automatically extract monitor conditions from offline safety proofs (ModelPlex). These conditions are simple arithmetic checks — easy to implement, easy to verify at Layers 2 and 3.
 
@@ -252,8 +255,8 @@ This decomposition follows ISO 26262: ASIL D = ASIL B(D) + ASIL B(D), where the 
 The relationship to the rest of the architecture:
 
 - **Three-layer verification** (Section 3) proves the software is correct assuming no HW faults
-- **Safety envelope enforcement** (Section 5) catches wrong outputs from Zone 2 components
-- **Anomaly path** catches HW faults that could silently corrupt Zone 1's execution
+- **Safety envelope enforcement** (Section 5) catches wrong outputs from ML Core components
+- **Anomaly path** catches HW faults that could silently corrupt the Safety Envelope's execution
 - Together, they cover both systematic failures (software bugs) and random failures (hardware faults)
 
 > **Detail**: See `deriving_anomarly_path_en.md` for the full treatment, including the HW fault model (SEU, SET, EMI), fault pattern analysis, and the systematic derivation method.
@@ -277,7 +280,7 @@ Level 2: Minimal Risk Condition (controlled stop, safe pullover)
 Level 3: Emergency Stop (immediate braking)
 ```
 
-Each level uses fewer and simpler components, making formal verification progressively easier. Level 0 uses the full Zone 1 + Zone 2 stack. Levels 2–3 use only Zone 1 components and are fully formally proven.
+Each level uses fewer and simpler components, making formal verification progressively easier. Level 0 uses the full Safety Envelope + ML Core stack. Levels 2–3 use only Safety Envelope components and are fully formally proven.
 
 The transition logic is modeled as a timed automaton and verified to ensure: no unprotected states exist, the system can always degrade further, and transitions are deterministic.
 
@@ -289,8 +292,8 @@ The transition logic is modeled as a timed automaton and verified to ensure: no 
 
 | Standard | Role in This Architecture |
 |---|---|
-| **ISO 26262** | ASIL decomposition across zones. Zone 1 at ASIL D, Zone 2 at ASIL B with ASIL D monitors. Three-layer verification maps to Part 6 (software). |
-| **ISO 21448 (SOTIF)** | Addresses insufficiencies in Zone 2 (perception, planning). Safety envelope enforcement is a SOTIF mitigation strategy. |
+| **ISO 26262** | ASIL decomposition across layers. Safety Envelope at ASIL D, ML Core at ASIL B with ASIL D monitors. Three-layer verification maps to Part 6 (software). |
+| **ISO 21448 (SOTIF)** | Addresses insufficiencies in the ML Core (perception, planning). Safety envelope enforcement is a SOTIF mitigation strategy. |
 | **UN R157** | Type approval for ALKS (Level 3 highway). ODD formal specification and runtime monitoring directly support R157 compliance. |
 | **ISO 21434** | Cybersecurity. Attack detection integrated into the safety monitoring framework. |
 
@@ -304,7 +307,7 @@ Several areas remain active research topics:
 
 - **Perception contracts** — How to formally specify and validate what the perception system guarantees to downstream components
 - **Neural network verification** — Proving safety-relevant properties of NN sub-components for bounded input regions
-- **Quantitative proof composition** — Combining deterministic proofs (Zone 1) with probabilistic evidence (Zone 2) into a single safety metric
+- **Quantitative proof composition** — Combining deterministic proofs (Safety Envelope) with probabilistic evidence (ML Core) into a single safety metric
 - **OTA re-verification** — Determining which proofs must be redone after a software update, and doing so incrementally
 - **Cybersecurity-safety integration** — Mapping cyber threats to safety contract violations
 
