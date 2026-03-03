@@ -6,34 +6,35 @@
 
 Autonomous driving software is among the most complex safety-critical systems ever built. It spans sensor processing, machine learning, planning, control, and actuation -- each introducing distinct failure modes. Traditional testing-based verification cannot provide the mathematical guarantees required for ASIL D safety integrity levels, and no single formal method covers the entire stack.
 
-### 1.2 The Solution: Proven Core + Monitored Envelope
+### 1.2 The Solution: ML Core + Safety Envelope
 
 This document describes an architecture that achieves end-to-end safety assurance by partitioning the AD/ADAS software into two concentric zones:
 
-**Zone 1: The Proven Core** -- Components where every safety-relevant property is mathematically proved. This includes control algorithms, safety monitors, and the software implementation layer. Correctness is established through formal verification: theorem proving, abstract interpretation, and deductive verification.
+**The Safety Envelope** -- Components where every safety-relevant property is mathematically proved. This includes control algorithms, safety monitors, and the software implementation layer. Correctness is established through formal verification: theorem proving, abstract interpretation, and deductive verification.
 
-**Zone 2: The Monitored Envelope** -- Components where formal proof of the primary function is infeasible (neural network perception, complex motion planning, world prediction), but safety is ensured by **proven monitors that live in Zone 1** and constrain the envelope's outputs at runtime.
+**The ML Core** -- Components where formal proof of the primary function is infeasible (neural network perception, complex motion planning, world prediction), but safety is ensured by **proven monitors that live in the Safety Envelope** and constrain the ML Core's outputs at runtime.
 
 The architectural insight is: *you do not need to prove the perception neural network is correct -- you need to prove that the safety monitor will catch it when it is wrong, and that the fallback response is safe.*
 
 ```
 +----------------------------------------------+
-|           Zone 2: Monitored Envelope         |
+|            The Safety Envelope               |
+|                                              |
+|  Verified safety monitors                    |
+|  Verified control algorithms                 |
+|  Verified SW implementation                  |
+|  Hardware fault tolerance (SW level)         |
+|                                              |
 |  +----------------------------------------+  |
+|  |           The ML Core                  |  |
+|  |                                        |  |
 |  |  Perception (NN, sensor fusion, etc.)  |  |
 |  |  Planning (behavior + motion)          |  |
 |  |  World model / prediction              |  |
 |  +-------------------+--------------------+  |
 |                       | outputs constrained  |
 |                       v                      |
-|  +----------------------------------------+  |
-|  |      Zone 1: The Proven Core           |  |
-|  |                                        |  |
-|  |  Verified safety monitors              |  |
-|  |  Verified control algorithms           |  |
-|  |  Verified SW implementation            |  |
-|  |  Hardware fault tolerance (SW level)   |  |
-|  +----------------------------------------+  |
+|           Safety Envelope enforces           |
 +----------------------------------------------+
 ```
 
@@ -43,9 +44,9 @@ This design extends and integrates three existing research documents:
 
 | Document | Covers | Extended by this design |
 |---|---|---|
-| `three_layer_formal_verification.md` | Algorithm correctness (L1), code alignment (L2), runtime error freedom (L3) | Becomes Zone 1 Sections 4.1-4.2; extended with perception/planning/composition |
-| `deriving_anomarly_path_en.md` | Hardware fault models, anomaly path derivation, ASIL decomposition | Becomes Zone 1 Section 4.3; integrated into system-level safety argument |
-| Arcanum (safe C++ subset, tool spec, implementation design) | Formal verification tooling for C++ | Becomes the implementation vehicle for Zone 1 verification (Section 4.2) |
+| `three_layer_formal_verification.md` | Algorithm correctness (L1), code alignment (L2), runtime error freedom (L3) | Becomes Safety Envelope Sections 4.1-4.2; extended with perception/planning/composition |
+| `deriving_anomarly_path_en.md` | Hardware fault models, anomaly path derivation, ASIL decomposition | Becomes Safety Envelope Section 4.3; integrated into system-level safety argument |
+| Arcanum (safe C++ subset, tool spec, implementation design) | Formal verification tooling for C++ | Becomes the implementation vehicle for Safety Envelope verification (Section 4.2) |
 
 ---
 
@@ -66,8 +67,8 @@ Different components require different levels of evidence to discharge their con
 
 | Zone | Discharge Method | Assurance Level | Example |
 |---|---|---|---|
-| Zone 1 | Mathematical proof (theorem prover, abstract interpretation) | Deterministic guarantee | "Steering command is always within [-5.0, 5.0] degrees" |
-| Zone 2 | Statistical evidence + runtime monitoring | Probabilistic bound + runtime enforcement | "Pedestrian detection recall >= 99.9% (measured) AND safety monitor rejects unsafe outputs (proved)" |
+| Safety Envelope | Mathematical proof (theorem prover, abstract interpretation) | Deterministic guarantee | "Steering command is always within [-5.0, 5.0] degrees" |
+| ML Core | Statistical evidence + runtime monitoring | Probabilistic bound + runtime enforcement | "Pedestrian detection recall >= 99.9% (measured) AND safety monitor rejects unsafe outputs (proved)" |
 | Foundation | Supplier qualification + validation testing | Contractual guarantee | "RTOS scheduling meets WCET budgets (qualified by supplier)" |
 
 ### 2.3 Contract Formalism
@@ -90,7 +91,7 @@ Contracts are expressed in a hierarchy of formalisms depending on the layer:
 
 ## 3. Foundation Assumptions
 
-These layers are outside the direct scope of this architecture (handled by suppliers and platform providers), but the proven core's safety argument depends on their guarantees. Each is treated as an external contract: we specify what we assume, how we validate the assumption, and what breaks if it is violated.
+These layers are outside the direct scope of this architecture (handled by suppliers and platform providers), but the Safety Envelope's safety argument depends on their guarantees. Each is treated as an external contract: we specify what we assume, how we validate the assumption, and what breaks if it is violated.
 
 ### 3.1 Hardware
 
@@ -133,7 +134,7 @@ These layers are outside the direct scope of this architecture (handled by suppl
 - Compiler optimizations do not introduce behaviors not present in the source
 
 **How we validate:**
-- **Ideal**: Use CompCert (formally verified C compiler) for all Zone 1 safety-critical code
+- **Ideal**: Use CompCert (formally verified C compiler) for all Safety Envelope safety-critical code
 - **Practical**: Use qualified GCC/Clang (ISO 26262 Part 8 Tool Qualification) + compiler validation test suites
 - **Future**: Translation validation at binary level (compare binary behavior against source semantics)
 
@@ -160,7 +161,7 @@ These layers are outside the direct scope of this architecture (handled by suppl
 
 ---
 
-## 4. Zone 1: The Proven Core
+## 4. The Safety Envelope
 
 This zone contains all components for which mathematical proof of correctness is both required and achievable. Every property claimed here must be backed by a machine-checked proof or a sound static analysis result.
 
@@ -224,7 +225,7 @@ The anomaly path is derivable at the SW architecture design phase from: input in
 
 ### 4.4 Safety Monitors
 
-This is the critical bridge component that makes the Monitored Envelope safe. Safety monitors live in Zone 1 (formally verified) but constrain Zone 2 outputs.
+This is the critical bridge component that makes the ML Core safe. Safety monitors live in the Safety Envelope (formally verified) but constrain ML Core outputs.
 
 #### 4.4.1 ModelPlex Runtime Monitors
 
@@ -269,17 +270,17 @@ Detects when the system is leaving its Operational Design Domain:
 When ODD boundary is crossed: initiate graceful degradation (Section 6.3).
 
 **Contract interface for all monitors**:
-- `G_monitor`: If Zone 2 output violates safety conditions, the monitor detects it and triggers fallback within FTTI
+- `G_monitor`: If ML Core output violates safety conditions, the monitor detects it and triggers fallback within FTTI
 - `A_monitor`: Monitor inputs (system state, perception output) are available with specified latency and accuracy
 
 ---
 
-## 5. Zone 2: The Monitored Envelope
+## 5. The ML Core
 
-Zone 2 contains components where formal proof of the primary function is infeasible, but safety is achieved through the combination of:
+The ML Core contains components where formal proof of the primary function is infeasible, but safety is achieved through the combination of:
 1. **Best-effort correctness**: Statistical validation, testing, simulation
 2. **Formal contracts**: Precisely specified input/output requirements
-3. **Zone 1 monitors**: Proven runtime checks that catch violations and trigger safe fallback
+3. **Safety Envelope monitors**: Proven runtime checks that catch violations and trigger safe fallback
 
 ### 5.1 Sensor Modeling & Perception Assurance
 
@@ -371,10 +372,10 @@ The behavior planner (lane change decisions, stop/go decisions, yield decisions)
 The motion planner (trajectory optimization, sampling-based planning) is typically too complex to verify directly. Instead, apply a **verified safety filter**:
 
 ```
-Motion Planner (Zone 2, unverified)
+Motion Planner (ML Core, unverified)
     | produces candidate trajectory
     v
-Safety Filter (Zone 1, verified)
+Safety Filter (Safety Envelope, verified)
     | checks: is trajectory collision-free AND physically feasible?
     +-- YES --> execute trajectory
     +-- NO  --> substitute verified fallback trajectory
@@ -449,19 +450,19 @@ HD map accuracy and freshness are assumptions of the planning and control layers
 
 ---
 
-## 6. The Bridge: How Zone 1 Constrains Zone 2
+## 6. The Bridge: How the Safety Envelope Constrains the ML Core
 
-This section describes the architectural patterns that connect the proven core to the monitored envelope, making the overall system safe despite unproved components.
+This section describes the architectural patterns that connect the Safety Envelope to the ML Core, making the overall system safe despite unproved components.
 
 ### 6.1 Safety Envelope Enforcement Pattern
 
 The fundamental safety pattern:
 
 ```
-Zone 2 Component (e.g., NN-based planner)
+ML Core Component (e.g., NN-based planner)
     | produces candidate output
     v
-Zone 1 Safety Filter (formally verified)
+Safety Envelope Filter (formally verified)
     | checks: does output satisfy safety contract?
     +-- YES --> forward output to actuator/downstream
     +-- NO  --> substitute verified fallback output
@@ -517,9 +518,9 @@ The system operates in a hierarchy of modes, each with its own safety proof:
 
 ```
 Level 0: Full Autonomy
-  - Zone 2 (NN perception + complex planner) active
-  - Zone 1 monitors: GREEN
-  - Safety proof: Zone 1 monitors + Zone 2 statistical evidence
+  - ML Core (NN perception + complex planner) active
+  - Safety Envelope monitors: GREEN
+  - Safety proof: Safety Envelope monitors + ML Core statistical evidence
       |
       | Monitor detects anomaly OR confidence drops
       v
@@ -566,7 +567,7 @@ Individual layer proofs must compose into a coherent system-level safety argumen
 ```
 G1: "Vehicle is safe within the defined ODD"
 |
-+-- S1: "Argued over proven core + monitored envelope architecture"
++-- S1: "Argued over Safety Envelope + ML Core architecture"
 |   |
 |   +-- G2: "Control algorithm maintains safety properties"
 |   |   Evidence: KeYmaera X proof (Layer 1)
@@ -590,7 +591,7 @@ G1: "Vehicle is safe within the defined ODD"
 |       Evidence: Statistical validation + runtime monitoring
 |
 +-- C1: "System operates within defined ODD"
-|   Validated by: ODD boundary monitor (Zone 1, proved)
+|   Validated by: ODD boundary monitor (Safety Envelope, proved)
 |
 +-- C2: "Hardware fault rates within specified budgets"
 |   Validated by: Supplier FMEDA + anomaly path architecture
@@ -601,41 +602,41 @@ G1: "Vehicle is safe within the defined ODD"
 
 ### 7.2 Quantitative Composition of Deterministic and Probabilistic Evidence
 
-**The key challenge**: Zone 1 provides deterministic guarantees ("always safe IF assumptions hold"), while Zone 2 provides probabilistic evidence ("perception meets contract with probability >= p"). How to combine these into a quantitative safety argument?
+**The key challenge**: The Safety Envelope provides deterministic guarantees ("always safe IF assumptions hold"), while the ML Core provides probabilistic evidence ("perception meets contract with probability >= p"). How to combine these into a quantitative safety argument?
 
 **Approach**:
 1. Decompose the end-to-end failure into mutually exclusive scenarios:
-   - Scenario A: Zone 2 output is correct AND Zone 1 processes it correctly --> Safe (deterministically, by Zone 1 proofs)
-   - Scenario B: Zone 2 output is incorrect BUT Zone 1 monitor detects it AND fallback is safe --> Safe (deterministically, by monitor + fallback proofs)
-   - Scenario C: Zone 2 output is incorrect AND Zone 1 monitor fails to detect it --> UNSAFE (residual risk)
+   - Scenario A: ML Core output is correct AND Safety Envelope processes it correctly --> Safe (deterministically, by Safety Envelope proofs)
+   - Scenario B: ML Core output is incorrect BUT Safety Envelope monitor detects it AND fallback is safe --> Safe (deterministically, by monitor + fallback proofs)
+   - Scenario C: ML Core output is incorrect AND Safety Envelope monitor fails to detect it --> UNSAFE (residual risk)
 
-2. P(unsafe) = P(Zone 2 incorrect) * P(monitor miss | Zone 2 incorrect)
+2. P(unsafe) = P(ML Core incorrect) * P(monitor miss | ML Core incorrect)
 
-3. P(Zone 2 incorrect) is bounded by perception contract validation (statistical evidence)
-4. P(monitor miss | Zone 2 incorrect) depends on monitor coverage:
+3. P(ML Core incorrect) is bounded by perception contract validation (statistical evidence)
+4. P(monitor miss | ML Core incorrect) depends on monitor coverage:
    - For model-based monitors (ModelPlex): if the error violates the dL model assumptions, the monitor detects it with probability 1 (deterministic). Only errors consistent with the model but outside the safety envelope are missed.
    - This is where the monitor design matters: the monitor must cover the failure modes that matter, not all possible failures.
 
 **Research needed**: Rigorous mathematical framework for combining formal proofs with statistical evidence in safety cases. Current safety standards (ISO 26262, ISO/PAS 21448 SOTIF) handle them separately; a unified quantitative framework is an open problem.
 
-### 7.3 ASIL Decomposition Across Zones
+### 7.3 ASIL Decomposition
 
 Applying ASIL decomposition (ISO 26262 Part 9) to the two-zone architecture:
 
-- **Zone 2 components (perception, planning)**: ASIL B for the primary function
-- **Zone 1 monitors constraining Zone 2**: ASIL D for the safety mechanism
-- **Zone 1 control/safety core**: ASIL D (or ASIL D decomposed per anomaly path memo: ASIL B(D) normal path + ASIL B(D) anomaly path)
+- **ML Core components (perception, planning)**: ASIL B for the primary function
+- **Safety Envelope monitors constraining ML Core**: ASIL D for the safety mechanism
+- **Safety Envelope control/safety core**: ASIL D (or ASIL D decomposed per anomaly path memo: ASIL B(D) normal path + ASIL B(D) anomaly path)
 
-The ASIL decomposition requires independence between the decomposed elements. Independence between Zone 1 and Zone 2 must be demonstrated:
-- **Functional independence**: Zone 1 monitors do not share code with Zone 2 components
-- **Data independence**: Zone 1 monitors have independent inputs (or verified input integrity)
-- **Execution independence**: Zone 1 and Zone 2 execute on separate cores or partitions with FFI
+The ASIL decomposition requires independence between the decomposed elements. Independence between the Safety Envelope and the ML Core must be demonstrated:
+- **Functional independence**: Safety Envelope monitors do not share code with ML Core components
+- **Data independence**: Safety Envelope monitors have independent inputs (or verified input integrity)
+- **Execution independence**: Safety Envelope and ML Core execute on separate cores or partitions with FFI
 
 ### 7.4 Gap Analysis and Residual Risk
 
 Systematic checklist for the complete safety argument:
 
-**Zone 1 internal gaps**:
+**Safety Envelope internal gaps**:
 - [ ] Every Layer 1 assumption maps to a Layer 2 precondition with bounds checking
 - [ ] Every Layer 1 timing assumption maps to a verified WCET budget
 - [ ] Every Layer 1 real-arithmetic computation maps to a bounded floating-point implementation
@@ -643,9 +644,9 @@ Systematic checklist for the complete safety argument:
 - [ ] Anomaly path covers all identified fault patterns with sufficient DC
 - [ ] Safety monitor implementation is verified through Layers 2 and 3
 
-**Zone 1 <--> Zone 2 gaps**:
-- [ ] Every Zone 2 output consumed by Zone 1 has a defined contract
-- [ ] Zone 1 monitors cover all safety-relevant failure modes of Zone 2
+**Safety Envelope <--> ML Core gaps**:
+- [ ] Every ML Core output consumed by the Safety Envelope has a defined contract
+- [ ] Safety Envelope monitors cover all safety-relevant failure modes of the ML Core
 - [ ] Fallback trajectories are available for every monitor trigger scenario
 - [ ] Degradation transitions are formally specified and verified
 
@@ -666,7 +667,7 @@ A cybersecurity breach can violate safety assumptions (spoofed sensor data, corr
 
 | Safety assumption | Cybersecurity threat | Mitigation |
 |---|---|---|
-| Sensor data within error bounds | Sensor spoofing (GPS, radar, camera) | Cross-sensor consistency check (Zone 1 monitor), authenticated sensor data |
+| Sensor data within error bounds | Sensor spoofing (GPS, radar, camera) | Cross-sensor consistency check (Safety Envelope monitor), authenticated sensor data |
 | Control commands within safe range | Command injection via compromised ECU | Authenticated inter-ECU communication, safety monitor checks output bounds |
 | Calibration parameters correct | Parameter manipulation via diagnostic port | Authenticated calibration access, runtime parameter integrity check (CRC) |
 | Software integrity | Malicious software update | Secure boot, signed firmware, OTA authentication |
