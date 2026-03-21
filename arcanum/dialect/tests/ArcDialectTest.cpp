@@ -13,6 +13,7 @@
 #include <functional>
 #include <string>
 #include <tuple>
+#include <vector>
 
 namespace arcanum {
 namespace {
@@ -315,62 +316,76 @@ TEST_F(ArcDialectTest, AddOpWithU16Type) {
   module->destroy();
 }
 
-// --- Task 2: CastOp tests ---
+// --- B2: CastOp type-pair tests (parameterized) ---
 
-TEST_F(ArcDialectTest, CastOpWideningI8ToI32) {
+struct CastOpParam {
+  const char* name;
+  unsigned srcW;
+  bool srcS;
+  unsigned dstW;
+  bool dstS;
+};
+
+class CastOpParamTest : public ::testing::TestWithParam<CastOpParam> {
+protected:
+  void SetUp() override {
+    context_.getOrLoadDialect<arc::ArcDialect>();
+    builder_ = std::make_unique<mlir::OpBuilder>(&context_);
+  }
+
+  mlir::MLIRContext context_;
+  std::unique_ptr<mlir::OpBuilder> builder_;
+};
+
+TEST_P(CastOpParamTest, CastOpTypePair) {
+  auto [name, srcW, srcS, dstW, dstS] = GetParam();
+
   auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
   builder_->setInsertionPointToEnd(module.getBody());
 
-  auto i8Type = arc::IntType::get(&context_, 8, true);
-  auto i32Type = arc::IntType::get(&context_, 32, true);
+  auto srcType = arc::IntType::get(&context_, srcW, srcS);
+  auto dstType = arc::IntType::get(&context_, dstW, dstS);
   auto src = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i8Type, builder_->getI8IntegerAttr(42));
+      builder_->getUnknownLoc(), srcType, builder_->getI32IntegerAttr(5));
   auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(),
-                                              i32Type, src.getResult());
+                                              dstType, src.getResult());
 
   EXPECT_TRUE(castOp);
-  EXPECT_EQ(castOp.getInput().getType(), i8Type);
-  EXPECT_EQ(castOp.getResult().getType(), i32Type);
+  EXPECT_EQ(castOp.getInput().getType(), srcType);
+  EXPECT_EQ(castOp.getResult().getType(), dstType);
   module->destroy();
 }
 
-TEST_F(ArcDialectTest, CastOpNarrowingI32ToI8) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
+INSTANTIATE_TEST_SUITE_P(
+    ArcDialect, CastOpParamTest,
+    ::testing::Values(CastOpParam{"WideningI8ToI32", 8, true, 32, true},
+                      CastOpParam{"NarrowingI32ToI8", 32, true, 8, true},
+                      CastOpParam{"SignChangeI32ToU32", 32, true, 32, false}),
+    [](const ::testing::TestParamInfo<CastOpParam>& info) {
+      return info.param.name;
+    });
 
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto i8Type = arc::IntType::get(&context_, 8, true);
-  auto src = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(100));
-  auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(), i8Type,
-                                              src.getResult());
+// --- B1: AddOp overflow attribute tests (parameterized) ---
 
-  EXPECT_TRUE(castOp);
-  EXPECT_EQ(castOp.getInput().getType(), i32Type);
-  EXPECT_EQ(castOp.getResult().getType(), i8Type);
-  module->destroy();
-}
+struct AddOpOverflowParam {
+  const char* name;
+  const char* overflowValue;
+};
 
-TEST_F(ArcDialectTest, CastOpSignChangeI32ToU32) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
+class AddOpOverflowTest : public ::testing::TestWithParam<AddOpOverflowParam> {
+protected:
+  void SetUp() override {
+    context_.getOrLoadDialect<arc::ArcDialect>();
+    builder_ = std::make_unique<mlir::OpBuilder>(&context_);
+  }
 
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto u32Type = arc::IntType::get(&context_, 32, false);
-  auto src = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(5));
-  auto castOp = builder_->create<arc::CastOp>(builder_->getUnknownLoc(),
-                                              u32Type, src.getResult());
+  mlir::MLIRContext context_;
+  std::unique_ptr<mlir::OpBuilder> builder_;
+};
 
-  EXPECT_TRUE(castOp);
-  EXPECT_EQ(castOp.getInput().getType(), i32Type);
-  EXPECT_EQ(castOp.getResult().getType(), u32Type);
-  module->destroy();
-}
+TEST_P(AddOpOverflowTest, SetsAndRetrievesOverflowAttribute) {
+  auto [name, overflowValue] = GetParam();
 
-// --- Task 3: Overflow mode string attribute tests ---
-
-TEST_F(ArcDialectTest, AddOpWithOverflowWrapAttribute) {
   auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
   builder_->setInsertionPointToEnd(module.getBody());
 
@@ -382,34 +397,21 @@ TEST_F(ArcDialectTest, AddOpWithOverflowWrapAttribute) {
   auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), i32Type,
                                             lhs, rhs);
 
-  // MLIR supports arbitrary attributes natively; attach overflow mode.
-  addOp->setAttr("overflow", builder_->getStringAttr("wrap"));
+  addOp->setAttr("overflow", builder_->getStringAttr(overflowValue));
   auto attr = addOp->getAttrOfType<mlir::StringAttr>("overflow");
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr.getValue(), "wrap");
+  EXPECT_EQ(attr.getValue(), overflowValue);
 
   module->destroy();
 }
 
-TEST_F(ArcDialectTest, AddOpWithOverflowSaturateAttribute) {
-  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
-  builder_->setInsertionPointToEnd(module.getBody());
-
-  auto i32Type = arc::IntType::get(&context_, 32, true);
-  auto lhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(1));
-  auto rhs = builder_->create<arc::ConstantOp>(
-      builder_->getUnknownLoc(), i32Type, builder_->getI32IntegerAttr(2));
-  auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), i32Type,
-                                            lhs, rhs);
-
-  addOp->setAttr("overflow", builder_->getStringAttr("saturate"));
-  auto attr = addOp->getAttrOfType<mlir::StringAttr>("overflow");
-  ASSERT_TRUE(attr);
-  EXPECT_EQ(attr.getValue(), "saturate");
-
-  module->destroy();
-}
+INSTANTIATE_TEST_SUITE_P(
+    ArcDialect, AddOpOverflowTest,
+    ::testing::Values(AddOpOverflowParam{"Wrap", "wrap"},
+                      AddOpOverflowParam{"Saturate", "saturate"}),
+    [](const ::testing::TestParamInfo<AddOpOverflowParam>& info) {
+      return info.param.name;
+    });
 
 TEST_F(ArcDialectTest, FuncOpWithOverflowTrapAttribute) {
   auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
@@ -450,7 +452,7 @@ TEST_F(ArcDialectTest, MulOpAbsentOverflowAttributeIsNull) {
 }
 
 // ============================================================
-// TC-12: Type print tests — verify dialect printer output
+// TC-12: Type print tests -- verify dialect printer output
 // ============================================================
 
 // Helper to print an MLIR type to string via the dialect printer.

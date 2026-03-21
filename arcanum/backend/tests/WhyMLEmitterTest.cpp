@@ -707,55 +707,8 @@ protected:
   std::unique_ptr<mlir::OpBuilder> builder_;
 };
 
-// [S2] i8 bounds in overflow assertion output
-TEST_F(WhyMLEmitterSlice2Test, EmitsI8BoundsInTrapMode) {
-  auto i8Type = arc::IntType::get(&ctx_, 8, true);
-  auto result = buildAndEmitArithFunc(i8Type, "", "add_i8");
-  ASSERT_TRUE(result.has_value());
-
-  EXPECT_NE(result->whymlText.find("-128"), std::string::npos)
-      << "Missing i8 min bound.  Text:\n"
-      << result->whymlText;
-  EXPECT_NE(result->whymlText.find("127"), std::string::npos)
-      << "Missing i8 max bound.  Text:\n"
-      << result->whymlText;
-}
-
-// [S2] u8 wrap mode uses mod 256
-TEST_F(WhyMLEmitterSlice2Test, EmitsU8WrapWithMod256) {
-  auto u8Type = arc::IntType::get(&ctx_, 8, false);
-  auto result = buildAndEmitArithFunc(u8Type, "wrap", "add_u8");
-  ASSERT_TRUE(result.has_value());
-
-  EXPECT_NE(result->whymlText.find("mod"), std::string::npos)
-      << "Missing mod for wrap mode.  Text:\n"
-      << result->whymlText;
-  EXPECT_NE(result->whymlText.find("256"), std::string::npos)
-      << "Missing 2^8=256 for u8 wrap.  Text:\n"
-      << result->whymlText;
-  // Should NOT have an assert (wrap mode doesn't trap)
-  EXPECT_EQ(result->whymlText.find("assert"), std::string::npos)
-      << "Wrap mode should not emit assert.  Text:\n"
-      << result->whymlText;
-}
-
-// [S2] Signed wrap mode uses mod with offset
-TEST_F(WhyMLEmitterSlice2Test, EmitsSignedWrapWithModAndOffset) {
-  auto i8Type = arc::IntType::get(&ctx_, 8, true);
-  auto result = buildAndEmitArithFunc(i8Type, "wrap", "add_i8_wrap");
-  ASSERT_TRUE(result.has_value());
-
-  EXPECT_NE(result->whymlText.find("mod"), std::string::npos)
-      << "Missing mod for signed wrap.  Text:\n"
-      << result->whymlText;
-  // Should contain 128 (half power) and 256 (full power) for i8
-  EXPECT_NE(result->whymlText.find("128"), std::string::npos)
-      << "Missing 2^7=128 offset for signed i8 wrap.  Text:\n"
-      << result->whymlText;
-  EXPECT_NE(result->whymlText.find("256"), std::string::npos)
-      << "Missing 2^8=256 modulus for signed i8 wrap.  Text:\n"
-      << result->whymlText;
-}
+// (B5 and B8 parameterized tests are defined after
+// ArithOpKind/buildAndEmitBinaryOpFunc below.)
 
 // [S2] Saturate mode emits clamping expression
 TEST_F(WhyMLEmitterSlice2Test, EmitsSaturateClamp) {
@@ -913,41 +866,113 @@ buildAndEmitBinaryOpFunc(mlir::MLIRContext& ctx, arc::IntType type,
   return result;
 }
 
-// [TC-1] SubOp with i16 in trap mode
-TEST_F(WhyMLEmitterSlice2Test, EmitsSubI16BoundsInTrapMode) {
-  auto i16Type = arc::IntType::get(&ctx_, 16, true);
-  auto result =
-      buildAndEmitBinaryOpFunc(ctx_, i16Type, "", "sub_i16", ArithOpKind::Sub);
+// --- B5: Trap-mode bounds tests (parameterized) ---
+// Consolidates EmitsSubI16BoundsInTrapMode, EmitsMulI16BoundsInTrapMode,
+// EmitsSubI8BoundsInTrapMode, and EmitsI64BoundsInTrapMode.
+
+enum class BoundsTestHelper { ArithFunc, BinaryOpFunc };
+
+struct TrapBoundsParam {
+  const char* name;
+  unsigned width;
+  bool isSigned;
+  BoundsTestHelper helper;
+  ArithOpKind opKind; // only used when helper == BinaryOpFunc
+  const char* funcName;
+  const char* minBound;
+  const char* maxBound;
+  const char* operatorStr; // extra substring check (empty = skip)
+};
+
+class TrapBoundsTest : public ::testing::TestWithParam<TrapBoundsParam> {
+protected:
+  void SetUp() override {
+    ctx_.getOrLoadDialect<arc::ArcDialect>();
+    builder_ = std::make_unique<mlir::OpBuilder>(&ctx_);
+  }
+
+  std::optional<WhyMLResult> buildArithFunc(arc::IntType type,
+                                            const std::string& funcName) {
+    auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+    builder_->setInsertionPointToEnd(module.getBody());
+
+    auto funcType = builder_->getFunctionType({type, type}, {type});
+    auto funcOp = builder_->create<arc::FuncOp>(
+        builder_->getUnknownLoc(), funcName, funcType,
+        /*requires_attr=*/mlir::StringAttr{},
+        /*ensures_attr=*/mlir::StringAttr{});
+
+    funcOp->setAttr("param_names",
+                    builder_->getArrayAttr({builder_->getStringAttr("a"),
+                                            builder_->getStringAttr("b")}));
+
+    auto& entryBlock = funcOp.getBody().emplaceBlock();
+    entryBlock.addArgument(type, builder_->getUnknownLoc());
+    entryBlock.addArgument(type, builder_->getUnknownLoc());
+
+    builder_->setInsertionPointToEnd(&entryBlock);
+    auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), type,
+                                              entryBlock.getArgument(0),
+                                              entryBlock.getArgument(1));
+    builder_->create<arc::ReturnOp>(builder_->getUnknownLoc(),
+                                    addOp.getResult());
+
+    auto result = emitWhyML(module);
+    module->destroy();
+    return result;
+  }
+
+  mlir::MLIRContext ctx_;
+  std::unique_ptr<mlir::OpBuilder> builder_;
+};
+
+TEST_P(TrapBoundsTest, EmitsTrapBounds) {
+  auto [name, width, isSigned, helper, opKind, funcName, minBound, maxBound,
+        operatorStr] = GetParam();
+
+  auto type = arc::IntType::get(&ctx_, width, isSigned);
+  std::optional<WhyMLResult> result;
+
+  if (helper == BoundsTestHelper::ArithFunc) {
+    result = buildArithFunc(type, funcName);
+  } else {
+    result = buildAndEmitBinaryOpFunc(ctx_, type, "", funcName, opKind);
+  }
+
   ASSERT_TRUE(result.has_value());
 
-  EXPECT_NE(result->whymlText.find("-32768"), std::string::npos)
-      << "Missing i16 min bound for SubOp.  Text:\n"
+  EXPECT_NE(result->whymlText.find(minBound), std::string::npos)
+      << "Missing min bound '" << minBound << "'.  Text:\n"
       << result->whymlText;
-  EXPECT_NE(result->whymlText.find("32767"), std::string::npos)
-      << "Missing i16 max bound for SubOp.  Text:\n"
+  EXPECT_NE(result->whymlText.find(maxBound), std::string::npos)
+      << "Missing max bound '" << maxBound << "'.  Text:\n"
       << result->whymlText;
-  EXPECT_NE(result->whymlText.find(" - "), std::string::npos)
-      << "Missing subtraction operator.  Text:\n"
-      << result->whymlText;
+
+  if (std::string(operatorStr).length() > 0) {
+    EXPECT_NE(result->whymlText.find(operatorStr), std::string::npos)
+        << "Missing operator '" << operatorStr << "'.  Text:\n"
+        << result->whymlText;
+  }
 }
 
-// [TC-1] MulOp with i16 in trap mode
-TEST_F(WhyMLEmitterSlice2Test, EmitsMulI16BoundsInTrapMode) {
-  auto i16Type = arc::IntType::get(&ctx_, 16, true);
-  auto result =
-      buildAndEmitBinaryOpFunc(ctx_, i16Type, "", "mul_i16", ArithOpKind::Mul);
-  ASSERT_TRUE(result.has_value());
-
-  EXPECT_NE(result->whymlText.find("-32768"), std::string::npos)
-      << "Missing i16 min bound for MulOp.  Text:\n"
-      << result->whymlText;
-  EXPECT_NE(result->whymlText.find("32767"), std::string::npos)
-      << "Missing i16 max bound for MulOp.  Text:\n"
-      << result->whymlText;
-  EXPECT_NE(result->whymlText.find(" * "), std::string::npos)
-      << "Missing multiplication operator.  Text:\n"
-      << result->whymlText;
-}
+INSTANTIATE_TEST_SUITE_P(
+    WhyMLEmitter, TrapBoundsTest,
+    ::testing::Values(
+        TrapBoundsParam{"AddI8", 8, true, BoundsTestHelper::ArithFunc,
+                        ArithOpKind::Sub /*unused*/, "add_i8", "-128", "127",
+                        ""},
+        TrapBoundsParam{"SubI16", 16, true, BoundsTestHelper::BinaryOpFunc,
+                        ArithOpKind::Sub, "sub_i16", "-32768", "32767", " - "},
+        TrapBoundsParam{"MulI16", 16, true, BoundsTestHelper::BinaryOpFunc,
+                        ArithOpKind::Mul, "mul_i16", "-32768", "32767", " * "},
+        TrapBoundsParam{"SubI8", 8, true, BoundsTestHelper::BinaryOpFunc,
+                        ArithOpKind::Sub, "sub_i8", "-128", "127", ""},
+        TrapBoundsParam{"AddI64", 64, true, BoundsTestHelper::ArithFunc,
+                        ArithOpKind::Sub /*unused*/, "add_i64",
+                        "-9223372036854775808", "9223372036854775807", ""}),
+    [](const ::testing::TestParamInfo<TrapBoundsParam>& info) {
+      return info.param.name;
+    });
 
 // [TC-1] DivOp with i16 in trap mode (has both div-by-zero and overflow)
 TEST_F(WhyMLEmitterSlice2Test, EmitsDivI16WithBothAssertions) {
@@ -997,45 +1022,97 @@ TEST_F(WhyMLEmitterSlice2Test, DivOpWrapModeNoSpuriousTrapAssert) {
       << result->whymlText;
 }
 
-// [TC-21] SubOp with i8 type verifies type-aware bounds
-TEST_F(WhyMLEmitterSlice2Test, EmitsSubI8BoundsInTrapMode) {
-  auto i8Type = arc::IntType::get(&ctx_, 8, true);
-  auto result =
-      buildAndEmitBinaryOpFunc(ctx_, i8Type, "", "sub_i8", ArithOpKind::Sub);
+// --- B8: Wrap-mode tests (parameterized) ---
+// Consolidates EmitsU64WrapWithMod2Pow64 (and can be extended for more wrap
+// mode variants).
+
+struct WrapModeParam {
+  const char* name;
+  unsigned width;
+  bool isSigned;
+  const char* funcName;
+  std::vector<const char*> expectedStrings;
+  std::vector<const char*> absentStrings;
+};
+
+class WrapModeTest : public ::testing::TestWithParam<WrapModeParam> {
+protected:
+  void SetUp() override {
+    ctx_.getOrLoadDialect<arc::ArcDialect>();
+    builder_ = std::make_unique<mlir::OpBuilder>(&ctx_);
+  }
+
+  std::optional<WhyMLResult> buildWrapArithFunc(arc::IntType type,
+                                                const std::string& funcName) {
+    auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+    builder_->setInsertionPointToEnd(module.getBody());
+
+    auto funcType = builder_->getFunctionType({type, type}, {type});
+    auto funcOp = builder_->create<arc::FuncOp>(
+        builder_->getUnknownLoc(), funcName, funcType,
+        /*requires_attr=*/mlir::StringAttr{},
+        /*ensures_attr=*/mlir::StringAttr{});
+
+    funcOp->setAttr("param_names",
+                    builder_->getArrayAttr({builder_->getStringAttr("a"),
+                                            builder_->getStringAttr("b")}));
+
+    auto& entryBlock = funcOp.getBody().emplaceBlock();
+    entryBlock.addArgument(type, builder_->getUnknownLoc());
+    entryBlock.addArgument(type, builder_->getUnknownLoc());
+
+    builder_->setInsertionPointToEnd(&entryBlock);
+    auto addOp = builder_->create<arc::AddOp>(builder_->getUnknownLoc(), type,
+                                              entryBlock.getArgument(0),
+                                              entryBlock.getArgument(1));
+    addOp->setAttr("overflow", builder_->getStringAttr("wrap"));
+    builder_->create<arc::ReturnOp>(builder_->getUnknownLoc(),
+                                    addOp.getResult());
+
+    auto result = emitWhyML(module);
+    module->destroy();
+    return result;
+  }
+
+  mlir::MLIRContext ctx_;
+  std::unique_ptr<mlir::OpBuilder> builder_;
+};
+
+TEST_P(WrapModeTest, EmitsWrapMode) {
+  auto [name, width, isSigned, funcName, expectedStrings, absentStrings] =
+      GetParam();
+
+  auto type = arc::IntType::get(&ctx_, width, isSigned);
+  auto result = buildWrapArithFunc(type, funcName);
   ASSERT_TRUE(result.has_value());
 
-  EXPECT_NE(result->whymlText.find("-128"), std::string::npos)
-      << "Missing i8 min bound for SubOp.  Text:\n"
-      << result->whymlText;
-  EXPECT_NE(result->whymlText.find("127"), std::string::npos)
-      << "Missing i8 max bound for SubOp.  Text:\n"
-      << result->whymlText;
+  for (const auto* expected : expectedStrings) {
+    EXPECT_NE(result->whymlText.find(expected), std::string::npos)
+        << "Missing expected string '" << expected << "'.  Text:\n"
+        << result->whymlText;
+  }
+  for (const auto* absent : absentStrings) {
+    EXPECT_EQ(result->whymlText.find(absent), std::string::npos)
+        << "Should not contain '" << absent << "'.  Text:\n"
+        << result->whymlText;
+  }
 }
 
-// [TC-4] i64 type: 65-bit APInt boundary for getPowerOfTwo
-TEST_F(WhyMLEmitterSlice2Test, EmitsI64BoundsInTrapMode) {
-  auto i64Type = arc::IntType::get(&ctx_, 64, true);
-  auto result = buildAndEmitArithFunc(i64Type, "", "add_i64");
-  ASSERT_TRUE(result.has_value());
-
-  EXPECT_NE(result->whymlText.find("-9223372036854775808"), std::string::npos)
-      << "Missing i64 min bound.  Text:\n"
-      << result->whymlText;
-  EXPECT_NE(result->whymlText.find("9223372036854775807"), std::string::npos)
-      << "Missing i64 max bound.  Text:\n"
-      << result->whymlText;
-}
-
-// [TC-4] u64 wrap mode with 2^64 modulus
-TEST_F(WhyMLEmitterSlice2Test, EmitsU64WrapWithMod2Pow64) {
-  auto u64Type = arc::IntType::get(&ctx_, 64, false);
-  auto result = buildAndEmitArithFunc(u64Type, "wrap", "add_u64");
-  ASSERT_TRUE(result.has_value());
-
-  EXPECT_NE(result->whymlText.find("18446744073709551616"), std::string::npos)
-      << "Missing 2^64 modulus for u64 wrap.  Text:\n"
-      << result->whymlText;
-}
+INSTANTIATE_TEST_SUITE_P(
+    WhyMLEmitter, WrapModeTest,
+    ::testing::Values(
+        WrapModeParam{"U8WrapMod256", 8, false, "add_u8", {"256", "mod"}, {}},
+        WrapModeParam{
+            "SignedI8WrapMod256", 8, true, "add_i8_wrap", {"256", "mod"}, {}},
+        WrapModeParam{"U64WrapMod2Pow64",
+                      64,
+                      false,
+                      "add_u64",
+                      {"18446744073709551616", "mod"},
+                      {}}),
+    [](const ::testing::TestParamInfo<WrapModeParam>& info) {
+      return info.param.name;
+    });
 
 // [TC-3] Wrap mode with null intType path: document this is unreachable
 // in well-formed IR because all arithmetic ops have IntType results.
