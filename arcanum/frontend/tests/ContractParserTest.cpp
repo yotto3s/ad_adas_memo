@@ -503,66 +503,48 @@ TEST(ContractParserTest, ParsesMultipleFunctionsWithContracts) {
   EXPECT_TRUE(foundEnsures);
 }
 
-// --- Task 5: Overflow mode annotation tests ---
+// --- B7: Overflow mode annotation tests (parameterized) ---
 
-TEST(ContractParserTest, OverflowModeDefaultIsTrap) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
+struct OverflowModeParam {
+  const char* name;
+  const char* annotation; // empty string for default (no overflow annotation)
+  const char* expected;
+};
+
+class OverflowModeTest : public ::testing::TestWithParam<OverflowModeParam> {};
+
+TEST_P(OverflowModeTest, ParsesOverflowMode) {
+  auto [name, annotation, expected] = GetParam();
+
+  std::string overflowLine;
+  if (std::string(annotation).length() > 0) {
+    overflowLine = std::string("    //@ overflow: ") + annotation + "\n";
+  }
+
+  std::string code = R"(
     #include <cstdint>
-    //@ requires: a >= 0
+)" + overflowLine +
+                     R"(    //@ requires: a >= 0
     int32_t foo(int32_t a) { return a; }
-  )",
-                                   ast);
+  )";
+
+  std::unique_ptr<clang::ASTUnit> ast;
+  auto contracts = parseFromSource(code, ast);
 
   EXPECT_EQ(contracts.size(), 1u);
   auto it = contracts.begin();
-  EXPECT_EQ(it->second.overflowMode, "trap");
+  EXPECT_EQ(it->second.overflowMode, expected);
 }
 
-TEST(ContractParserTest, OverflowModeTrap) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ overflow: trap
-    //@ requires: a >= 0
-    int32_t foo(int32_t a) { return a; }
-  )",
-                                   ast);
-
-  EXPECT_EQ(contracts.size(), 1u);
-  auto it = contracts.begin();
-  EXPECT_EQ(it->second.overflowMode, "trap");
-}
-
-TEST(ContractParserTest, OverflowModeWrap) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ overflow: wrap
-    //@ requires: a >= 0
-    int32_t foo(int32_t a) { return a; }
-  )",
-                                   ast);
-
-  EXPECT_EQ(contracts.size(), 1u);
-  auto it = contracts.begin();
-  EXPECT_EQ(it->second.overflowMode, "wrap");
-}
-
-TEST(ContractParserTest, OverflowModeSaturate) {
-  std::unique_ptr<clang::ASTUnit> ast;
-  auto contracts = parseFromSource(R"(
-    #include <cstdint>
-    //@ overflow: saturate
-    //@ requires: a >= 0
-    int32_t foo(int32_t a) { return a; }
-  )",
-                                   ast);
-
-  EXPECT_EQ(contracts.size(), 1u);
-  auto it = contracts.begin();
-  EXPECT_EQ(it->second.overflowMode, "saturate");
-}
+INSTANTIATE_TEST_SUITE_P(
+    ContractParser, OverflowModeTest,
+    ::testing::Values(OverflowModeParam{"DefaultIsTrap", "", "trap"},
+                      OverflowModeParam{"ExplicitTrap", "trap", "trap"},
+                      OverflowModeParam{"Wrap", "wrap", "wrap"},
+                      OverflowModeParam{"Saturate", "saturate", "saturate"}),
+    [](const ::testing::TestParamInfo<OverflowModeParam>& info) {
+      return info.param.name;
+    });
 
 TEST(ContractParserTest, OverflowModeOnlyStoresContract) {
   // A function with only an overflow annotation (non-trap) should be stored.
