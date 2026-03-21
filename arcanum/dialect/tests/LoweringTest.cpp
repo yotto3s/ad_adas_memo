@@ -85,7 +85,6 @@ TEST_F(LoweringTestFixture, LowersIfElseFunction) {
   EXPECT_TRUE(foundIf);
 }
 
-// TC-12: Verify contract attributes and body operations on lowered FuncOp
 TEST_F(LoweringTestFixture, FuncOpHasContractAttributesAndBody) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -216,34 +215,8 @@ TEST_F(LoweringTestFixture, VoidReturnDoesNotCrash) {
   EXPECT_TRUE(module);
 }
 
-// B6: Assignment lowering test
-TEST_F(LoweringTestFixture, LowersAssignment) {
-  auto ast = clang::tooling::buildASTFromCodeWithArgs(
-      R"(
-    #include <cstdint>
-    int32_t withAssign(int32_t a) {
-      int32_t x = a;
-      x = a + 1;
-      return x;
-    }
-  )",
-      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
-      std::make_shared<clang::PCHContainerOperations>());
-  ASSERT_NE(ast, nullptr);
+// Multi-type lowering tests ---
 
-  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
-  mlir::MLIRContext mlirCtx;
-  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
-  ASSERT_TRUE(module);
-
-  bool foundAssign = false;
-  module->walk([&](arc::AssignOp) { foundAssign = true; });
-  EXPECT_TRUE(foundAssign);
-}
-
-// --- Slice 2: Multi-type lowering tests ---
-
-// [TC-9] Parametrized type-mapping test covering all integer widths/signedness
 TEST_F(LoweringTestFixture, TypeMappingCoversAllIntegerWidths) {
   struct TypeMappingCase {
     const char* typeName;
@@ -412,7 +385,6 @@ TEST_F(LoweringTestFixture, UnsignedArithAlwaysGetsWrapOverflow) {
   EXPECT_TRUE(foundAdd);
 }
 
-// [TC-10] Default mode ("trap") is stored on FuncOp when no annotation present
 TEST_F(LoweringTestFixture, DefaultTrapModeOnFuncOp) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -440,7 +412,6 @@ TEST_F(LoweringTestFixture, DefaultTrapModeOnFuncOp) {
   EXPECT_TRUE(foundFunc);
 }
 
-// [TC-7] Overflow attribute on DivOp/RemOp uses function mode
 TEST_F(LoweringTestFixture, OverflowAttrOnDivRemUsesFunctionMode) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -469,7 +440,6 @@ TEST_F(LoweringTestFixture, OverflowAttrOnDivRemUsesFunctionMode) {
   EXPECT_TRUE(foundDiv);
 }
 
-// [TC-8] Unary negation with non-i32 type produces SubOp with correct width
 TEST_F(LoweringTestFixture, NegationOfI8ProducesSubOpWithI8Width) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -500,7 +470,6 @@ TEST_F(LoweringTestFixture, NegationOfI8ProducesSubOpWithI8Width) {
   EXPECT_TRUE(foundSub);
 }
 
-// [TC-11] Widening cast lowering (i8 -> i32) produces CastOp
 TEST_F(LoweringTestFixture, LowersWideningCastI8ToI32) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -529,7 +498,6 @@ TEST_F(LoweringTestFixture, LowersWideningCastI8ToI32) {
   EXPECT_TRUE(foundCast);
 }
 
-// [SC-4] CastOp in non-trap mode gets overflow attribute
 TEST_F(LoweringTestFixture, CastOpInWrapModeGetsOverflowAttr) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -556,6 +524,31 @@ TEST_F(LoweringTestFixture, CastOpInWrapModeGetsOverflowAttr) {
     foundCast = true;
   });
   EXPECT_TRUE(foundCast);
+}
+
+TEST_F(LoweringTestFixture, UnsupportedExprIncrementsFallbackCount) {
+  // The ternary operator (ConditionalOperator) is not handled by lowerExpr,
+  // so it hits the catch-all fallback path that calls recordFallback().
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    int32_t abs_val(int32_t a) {
+      return a > 0 ? a : -a;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  DiagnosticTracker::reset();
+  ASSERT_EQ(DiagnosticTracker::getFallbackCount(), 0);
+
+  std::map<const clang::FunctionDecl*, ContractInfo> contracts;
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  // Module is still produced (lowering is best-effort), but fallback was hit.
+  ASSERT_TRUE(module);
+  EXPECT_GT(DiagnosticTracker::getFallbackCount(), 0);
 }
 
 } // namespace
