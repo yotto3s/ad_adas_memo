@@ -85,7 +85,6 @@ TEST_F(LoweringTestFixture, LowersIfElseFunction) {
   EXPECT_TRUE(foundIf);
 }
 
-// TC-12: Verify contract attributes and body operations on lowered FuncOp
 TEST_F(LoweringTestFixture, FuncOpHasContractAttributesAndBody) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -216,9 +215,8 @@ TEST_F(LoweringTestFixture, VoidReturnDoesNotCrash) {
   EXPECT_TRUE(module);
 }
 
-// --- Slice 2: Multi-type lowering tests ---
+// Multi-type lowering tests ---
 
-// [TC-9] Parametrized type-mapping test covering all integer widths/signedness
 TEST_F(LoweringTestFixture, TypeMappingCoversAllIntegerWidths) {
   struct TypeMappingCase {
     const char* typeName;
@@ -387,7 +385,6 @@ TEST_F(LoweringTestFixture, UnsignedArithAlwaysGetsWrapOverflow) {
   EXPECT_TRUE(foundAdd);
 }
 
-// [TC-10] Default mode ("trap") is stored on FuncOp when no annotation present
 TEST_F(LoweringTestFixture, DefaultTrapModeOnFuncOp) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -415,7 +412,6 @@ TEST_F(LoweringTestFixture, DefaultTrapModeOnFuncOp) {
   EXPECT_TRUE(foundFunc);
 }
 
-// [TC-7] Overflow attribute on DivOp/RemOp uses function mode
 TEST_F(LoweringTestFixture, OverflowAttrOnDivRemUsesFunctionMode) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -444,7 +440,6 @@ TEST_F(LoweringTestFixture, OverflowAttrOnDivRemUsesFunctionMode) {
   EXPECT_TRUE(foundDiv);
 }
 
-// [TC-8] Unary negation with non-i32 type produces SubOp with correct width
 TEST_F(LoweringTestFixture, NegationOfI8ProducesSubOpWithI8Width) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -475,7 +470,6 @@ TEST_F(LoweringTestFixture, NegationOfI8ProducesSubOpWithI8Width) {
   EXPECT_TRUE(foundSub);
 }
 
-// [TC-11] Widening cast lowering (i8 -> i32) produces CastOp
 TEST_F(LoweringTestFixture, LowersWideningCastI8ToI32) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -504,7 +498,6 @@ TEST_F(LoweringTestFixture, LowersWideningCastI8ToI32) {
   EXPECT_TRUE(foundCast);
 }
 
-// [SC-4] CastOp in non-trap mode gets overflow attribute
 TEST_F(LoweringTestFixture, CastOpInWrapModeGetsOverflowAttr) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -532,8 +525,6 @@ TEST_F(LoweringTestFixture, CastOpInWrapModeGetsOverflowAttr) {
   });
   EXPECT_TRUE(foundCast);
 }
-
-// --- Coverage gap C2: DiagnosticTracker integration with lowerToArc ---
 
 TEST_F(LoweringTestFixture, UnsupportedExprIncrementsFallbackCount) {
   // The ternary operator (ConditionalOperator) is not handled by lowerExpr,

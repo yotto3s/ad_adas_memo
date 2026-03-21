@@ -98,8 +98,6 @@ TEST(WhyMLEmitterTest, LocationMapPopulated) {
   EXPECT_FALSE(result->locationMap.empty());
 }
 
-// --- Coverage gap C1: moduleToFuncMap population ---
-
 TEST(WhyMLEmitterTest, PopulatesModuleToFuncMap) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -132,7 +130,6 @@ TEST(WhyMLEmitterTest, PopulatesModuleToFuncMap) {
   EXPECT_EQ(it->second, "safe_add");
 }
 
-// TC-18: Test subtraction overflow assertion
 TEST(WhyMLEmitterTest, EmitsSubtractionOverflowAssertion) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -156,7 +153,6 @@ TEST(WhyMLEmitterTest, EmitsSubtractionOverflowAssertion) {
   EXPECT_NE(result->whymlText.find("-2147483648"), std::string::npos);
 }
 
-// TC-18: Test VarOp emission
 TEST(WhyMLEmitterTest, EmitsLetBinding) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -217,7 +213,6 @@ TEST(WhyMLEmitterTest, EmitsIfThenElse) {
       << result->whymlText;
 }
 
-// TC-19: Test empty module -> nullopt
 TEST(WhyMLEmitterTest, EmptyModuleReturnsNullopt) {
   mlir::MLIRContext mlirCtx;
   mlirCtx.getOrLoadDialect<arc::ArcDialect>();
@@ -230,7 +225,6 @@ TEST(WhyMLEmitterTest, EmptyModuleReturnsNullopt) {
   module->destroy();
 }
 
-// TC-18: Test comparison emission
 TEST(WhyMLEmitterTest, EmitsComparisonExpression) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -253,7 +247,6 @@ TEST(WhyMLEmitterTest, EmitsComparisonExpression) {
   EXPECT_NE(result->whymlText.find(">"), std::string::npos);
 }
 
-// TC-18: Test original C++ parameter names in WhyML
 TEST(WhyMLEmitterTest, UsesOriginalParameterNames) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -278,7 +271,6 @@ TEST(WhyMLEmitterTest, UsesOriginalParameterNames) {
   EXPECT_EQ(result->whymlText.find("arg0"), std::string::npos);
 }
 
-// [W18/TC-12] Test remainder (%) WhyML emission
 TEST(WhyMLEmitterTest, EmitsRemainderWithModAndDivisorCheck) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -431,9 +423,6 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 // --- Parameterized: ComputerDivision Import Tests ---
-// Merged from WhyMLEmitterRegressionTest: [F2] division/modulo require
-// "use int.ComputerDivision".
-
 struct ComputerDivisionImportParam {
   std::string name;
   std::string code;
@@ -553,7 +542,6 @@ TEST(WhyMLEmitterTest, IfWithoutElseEmitsElseClause) {
   }
 }
 
-// --- G2: Multiplication overflow assertions ---
 TEST(WhyMLEmitterTest, EmitsMultiplicationOverflowAssertion) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -584,7 +572,6 @@ TEST(WhyMLEmitterTest, EmitsMultiplicationOverflowAssertion) {
       << result->whymlText;
 }
 
-// --- G4: AssignOp emission (variable reassignment) ---
 TEST(WhyMLEmitterTest, EmitsAssignOpAsLetRebinding) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
       R"(
@@ -621,7 +608,7 @@ TEST(WhyMLEmitterTest, EmitsAssignOpAsLetRebinding) {
 }
 
 // ============================================================
-// Slice 2: Type-aware bounds, overflow modes, cast emission
+// Type-aware bounds, overflow modes, cast emission
 // ============================================================
 
 /// Test fixture for building Arc IR directly via OpBuilder.
@@ -707,7 +694,6 @@ protected:
   std::unique_ptr<mlir::OpBuilder> builder_;
 };
 
-// [S2] i8 bounds in overflow assertion output
 TEST_F(WhyMLEmitterSlice2Test, EmitsI8BoundsInTrapMode) {
   auto i8Type = arc::IntType::get(&ctx_, 8, true);
   auto result = buildAndEmitArithFunc(i8Type, "", "add_i8");
@@ -721,7 +707,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsI8BoundsInTrapMode) {
       << result->whymlText;
 }
 
-// [S2] u8 wrap mode uses mod 256
 TEST_F(WhyMLEmitterSlice2Test, EmitsU8WrapWithMod256) {
   auto u8Type = arc::IntType::get(&ctx_, 8, false);
   auto result = buildAndEmitArithFunc(u8Type, "wrap", "add_u8");
@@ -739,7 +724,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsU8WrapWithMod256) {
       << result->whymlText;
 }
 
-// [S2] Signed wrap mode uses mod with offset
 TEST_F(WhyMLEmitterSlice2Test, EmitsSignedWrapWithModAndOffset) {
   auto i8Type = arc::IntType::get(&ctx_, 8, true);
   auto result = buildAndEmitArithFunc(i8Type, "wrap", "add_i8_wrap");
@@ -757,7 +741,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsSignedWrapWithModAndOffset) {
       << result->whymlText;
 }
 
-// [S2] Saturate mode emits clamping expression
 TEST_F(WhyMLEmitterSlice2Test, EmitsSaturateClamp) {
   auto i8Type = arc::IntType::get(&ctx_, 8, true);
   auto result = buildAndEmitArithFunc(i8Type, "saturate", "add_i8_sat");
@@ -775,7 +758,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsSaturateClamp) {
       << result->whymlText;
 }
 
-// [S2] ComputerDivision import for wrap mode
 TEST_F(WhyMLEmitterSlice2Test, WrapModeImportsComputerDivision) {
   auto u8Type = arc::IntType::get(&ctx_, 8, false);
   auto result = buildAndEmitArithFunc(u8Type, "wrap", "add_wrap");
@@ -787,7 +769,6 @@ TEST_F(WhyMLEmitterSlice2Test, WrapModeImportsComputerDivision) {
       << result->whymlText;
 }
 
-// [S2] Widening cast (i8 -> i32) produces no assert
 TEST_F(WhyMLEmitterSlice2Test, WideningCastNoAssert) {
   auto i8Type = arc::IntType::get(&ctx_, 8, true);
   auto i32Type = arc::IntType::get(&ctx_, 32, true);
@@ -799,7 +780,6 @@ TEST_F(WhyMLEmitterSlice2Test, WideningCastNoAssert) {
       << result->whymlText;
 }
 
-// [S2] Narrowing cast (i32 -> i8) in trap mode asserts target range
 TEST_F(WhyMLEmitterSlice2Test, NarrowingCastAssertsRange) {
   auto i32Type = arc::IntType::get(&ctx_, 32, true);
   auto i8Type = arc::IntType::get(&ctx_, 8, true);
@@ -817,7 +797,6 @@ TEST_F(WhyMLEmitterSlice2Test, NarrowingCastAssertsRange) {
       << result->whymlText;
 }
 
-// [S2] Sign-change cast (i32 -> u32) in trap mode asserts target range
 TEST_F(WhyMLEmitterSlice2Test, SignChangeCastAssertsRange) {
   auto i32Type = arc::IntType::get(&ctx_, 32, true);
   auto u32Type = arc::IntType::get(&ctx_, 32, false);
@@ -837,7 +816,7 @@ TEST_F(WhyMLEmitterSlice2Test, SignChangeCastAssertsRange) {
 }
 
 // ============================================================
-// TC-1: SubOp, MulOp, DivOp, RemOp WhyML emitter tests
+// SubOp, MulOp, DivOp, RemOp WhyML emitter tests
 // ============================================================
 
 // Helper: build a module with a single function containing one binary op
@@ -913,7 +892,6 @@ buildAndEmitBinaryOpFunc(mlir::MLIRContext& ctx, arc::IntType type,
   return result;
 }
 
-// [TC-1] SubOp with i16 in trap mode
 TEST_F(WhyMLEmitterSlice2Test, EmitsSubI16BoundsInTrapMode) {
   auto i16Type = arc::IntType::get(&ctx_, 16, true);
   auto result =
@@ -931,7 +909,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsSubI16BoundsInTrapMode) {
       << result->whymlText;
 }
 
-// [TC-1] MulOp with i16 in trap mode
 TEST_F(WhyMLEmitterSlice2Test, EmitsMulI16BoundsInTrapMode) {
   auto i16Type = arc::IntType::get(&ctx_, 16, true);
   auto result =
@@ -949,7 +926,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsMulI16BoundsInTrapMode) {
       << result->whymlText;
 }
 
-// [TC-1] DivOp with i16 in trap mode (has both div-by-zero and overflow)
 TEST_F(WhyMLEmitterSlice2Test, EmitsDivI16WithBothAssertions) {
   auto i16Type = arc::IntType::get(&ctx_, 16, true);
   auto result =
@@ -964,7 +940,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsDivI16WithBothAssertions) {
       << result->whymlText;
 }
 
-// [TC-1] RemOp with u8 in wrap mode (no overflow assertion)
 TEST_F(WhyMLEmitterSlice2Test, EmitsRemU8WrapMode) {
   auto u8Type = arc::IntType::get(&ctx_, 8, false);
   auto result = buildAndEmitBinaryOpFunc(ctx_, u8Type, "wrap", "rem_u8",
@@ -997,7 +972,6 @@ TEST_F(WhyMLEmitterSlice2Test, DivOpWrapModeNoSpuriousTrapAssert) {
       << result->whymlText;
 }
 
-// [TC-21] SubOp with i8 type verifies type-aware bounds
 TEST_F(WhyMLEmitterSlice2Test, EmitsSubI8BoundsInTrapMode) {
   auto i8Type = arc::IntType::get(&ctx_, 8, true);
   auto result =
@@ -1012,7 +986,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsSubI8BoundsInTrapMode) {
       << result->whymlText;
 }
 
-// [TC-4] i64 type: 65-bit APInt boundary for getPowerOfTwo
 TEST_F(WhyMLEmitterSlice2Test, EmitsI64BoundsInTrapMode) {
   auto i64Type = arc::IntType::get(&ctx_, 64, true);
   auto result = buildAndEmitArithFunc(i64Type, "", "add_i64");
@@ -1026,7 +999,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsI64BoundsInTrapMode) {
       << result->whymlText;
 }
 
-// [TC-4] u64 wrap mode with 2^64 modulus
 TEST_F(WhyMLEmitterSlice2Test, EmitsU64WrapWithMod2Pow64) {
   auto u64Type = arc::IntType::get(&ctx_, 64, false);
   auto result = buildAndEmitArithFunc(u64Type, "wrap", "add_u64");
@@ -1037,7 +1009,7 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsU64WrapWithMod2Pow64) {
       << result->whymlText;
 }
 
-// [TC-3] Wrap mode with null intType path: document this is unreachable
+// Wrap mode with null intType path: document this is unreachable
 // in well-formed IR because all arithmetic ops have IntType results.
 // The fallback (modExpr = rawExpr) exists as a defensive measure.
 // This test constructs a scenario to verify the defensive path.
@@ -1090,7 +1062,6 @@ TEST_F(WhyMLEmitterSlice2Test, WrapModeCastOnlyImportsComputerDivision) {
       << result->whymlText;
 }
 
-// [S2-TC6] DivOp with saturate mode emits clamping, not trap assertion
 TEST_F(WhyMLEmitterSlice2Test, EmitsDivSaturateMode) {
   auto i16Type = arc::IntType::get(&ctx_, 16, true);
   auto result = buildAndEmitBinaryOpFunc(ctx_, i16Type, "saturate",
@@ -1125,7 +1096,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsDivSaturateMode) {
       << result->whymlText;
 }
 
-// [S2-TC6] CastOp (i32->i8) with saturate mode emits clamping
 TEST_F(WhyMLEmitterSlice2Test, EmitsCastSaturateMode) {
   auto i32Type = arc::IntType::get(&ctx_, 32, true);
   auto i8Type = arc::IntType::get(&ctx_, 8, true);
@@ -1174,7 +1144,6 @@ TEST_F(WhyMLEmitterSlice2Test, EmitsCastSaturateMode) {
       << result->whymlText;
 }
 
-// [SC-7/F1/TC-5] Unsigned-to-signed same-width cast now emits assertion
 TEST_F(WhyMLEmitterSlice2Test, UnsignedToSignedSameWidthCastAssertsRange) {
   auto u32Type = arc::IntType::get(&ctx_, 32, false);
   auto i32Type = arc::IntType::get(&ctx_, 32, true);
