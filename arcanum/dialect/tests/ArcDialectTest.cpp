@@ -513,5 +513,212 @@ TEST_F(ArcDialectTest, IntTypeVerifyRejectsInvalidWidth) {
   context_.getDiagEngine().eraseHandler(diagHandler);
 }
 
+// ============================================================
+// Loop operations (Slice 3)
+// ============================================================
+
+// --- B6: LoopOp condition_first tests (parameterized) ---
+
+struct LoopConditionFirstParam {
+  const char* name;
+  bool conditionFirst;
+};
+
+class LoopConditionFirstTest
+    : public ::testing::TestWithParam<LoopConditionFirstParam> {
+protected:
+  void SetUp() override {
+    context_.getOrLoadDialect<arc::ArcDialect>();
+    builder_ = std::make_unique<mlir::OpBuilder>(&context_);
+  }
+
+  mlir::MLIRContext context_;
+  std::unique_ptr<mlir::OpBuilder> builder_;
+};
+
+TEST_P(LoopConditionFirstTest, SetsConditionFirstAttribute) {
+  auto [name, conditionFirst] = GetParam();
+
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
+  loopOp->setAttr("condition_first", builder_->getBoolAttr(conditionFirst));
+
+  if (conditionFirst) {
+    loopOp->setAttr("invariant", builder_->getStringAttr("i >= 0 && i <= n"));
+    loopOp->setAttr("variant", builder_->getStringAttr("n - i"));
+    loopOp->setAttr("assigns", builder_->getStringAttr("i, sum"));
+  }
+
+  EXPECT_TRUE(loopOp);
+  auto condFirst = loopOp->getAttrOfType<mlir::BoolAttr>("condition_first");
+  ASSERT_TRUE(condFirst);
+  EXPECT_EQ(condFirst.getValue(), conditionFirst);
+
+  if (conditionFirst) {
+    auto inv = loopOp->getAttrOfType<mlir::StringAttr>("invariant");
+    ASSERT_TRUE(inv);
+    EXPECT_EQ(inv.getValue(), "i >= 0 && i <= n");
+  }
+
+  module->destroy();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ArcDialect, LoopConditionFirstTest,
+    ::testing::Values(LoopConditionFirstParam{"ForLoop", true},
+                      LoopConditionFirstParam{"DoWhile", false}),
+    [](const ::testing::TestParamInfo<LoopConditionFirstParam>& info) {
+      return info.param.name;
+    });
+
+// --- B3: Simple zero-operand op creation tests (parameterized) ---
+
+TEST_F(ArcDialectTest, SimpleOpCreation) {
+  struct SimpleOpCase {
+    const char* name;
+    std::function<bool(mlir::OpBuilder&, mlir::Location)> create;
+  };
+
+  std::vector<SimpleOpCase> cases = {
+      {"BreakOp",
+       [](mlir::OpBuilder& b, mlir::Location loc) {
+         return static_cast<bool>(b.create<arc::BreakOp>(loc));
+       }},
+      {"ContinueOp",
+       [](mlir::OpBuilder& b, mlir::Location loc) {
+         return static_cast<bool>(b.create<arc::ContinueOp>(loc));
+       }},
+      {"YieldOp",
+       [](mlir::OpBuilder& b, mlir::Location loc) {
+         return static_cast<bool>(b.create<arc::YieldOp>(loc));
+       }},
+  };
+
+  for (const auto& tc : cases) {
+    SCOPED_TRACE(tc.name);
+    auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+    builder_->setInsertionPointToEnd(module.getBody());
+
+    EXPECT_TRUE(tc.create(*builder_, builder_->getUnknownLoc()));
+
+    module->destroy();
+  }
+}
+
+TEST_F(ArcDialectTest, ConditionOpCreation) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto boolType = arc::BoolType::get(&context_);
+  auto cond = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), boolType, builder_->getBoolAttr(true));
+  auto condOp = builder_->create<arc::ConditionOp>(builder_->getUnknownLoc(),
+                                                   cond.getResult());
+  EXPECT_TRUE(condOp);
+
+  module->destroy();
+}
+
+TEST_F(ArcDialectTest, LoopOpHasFourRegions) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
+  EXPECT_EQ(loopOp->getNumRegions(), 4u);
+
+  module->destroy();
+}
+
+// ---------------------------------------------------------------------------
+// [TC-10] LoopOp roundtrip test
+// ---------------------------------------------------------------------------
+
+TEST_F(ArcDialectTest, LoopOpPrintRoundtrip) {
+  auto module = mlir::ModuleOp::create(builder_->getUnknownLoc());
+  builder_->setInsertionPointToEnd(module.getBody());
+
+  auto i32Ty = arc::IntType::get(&context_, 32, true);
+  auto boolTy = arc::BoolType::get(&context_);
+  auto funcType = builder_->getFunctionType({i32Ty}, {i32Ty});
+
+  auto funcOp = builder_->create<arc::FuncOp>(
+      builder_->getUnknownLoc(), builder_->getStringAttr("loop_test"),
+      mlir::TypeAttr::get(funcType), mlir::StringAttr(), mlir::StringAttr());
+  auto& entryBlock = funcOp.getBody().emplaceBlock();
+  entryBlock.addArgument(i32Ty, builder_->getUnknownLoc());
+
+  builder_->setInsertionPointToEnd(&entryBlock);
+
+  auto initConst = builder_->create<arc::ConstantOp>(
+      builder_->getUnknownLoc(), i32Ty, builder_->getI32IntegerAttr(0));
+  auto varI = builder_->create<arc::VarOp>(builder_->getUnknownLoc(), i32Ty,
+                                           "i", initConst);
+
+  auto loopOp = builder_->create<arc::LoopOp>(builder_->getUnknownLoc());
+  loopOp->setAttr("condition_first", builder_->getBoolAttr(true));
+  loopOp->setAttr("invariant", builder_->getStringAttr("i >= 0"));
+  loopOp->setAttr("variant", builder_->getStringAttr("n - i"));
+  loopOp->setAttr("assigns", builder_->getStringAttr("i"));
+
+  {
+    auto& block = loopOp.getInitRegion().emplaceBlock();
+    builder_->setInsertionPointToEnd(&block);
+    builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
+  }
+
+  {
+    auto& block = loopOp.getCondRegion().emplaceBlock();
+    builder_->setInsertionPointToEnd(&block);
+    auto trueCond = builder_->create<arc::ConstantOp>(
+        builder_->getUnknownLoc(), boolTy, builder_->getBoolAttr(true));
+    builder_->create<arc::ConditionOp>(builder_->getUnknownLoc(), trueCond);
+  }
+
+  {
+    auto& block = loopOp.getBodyRegion().emplaceBlock();
+    builder_->setInsertionPointToEnd(&block);
+    auto one = builder_->create<arc::ConstantOp>(
+        builder_->getUnknownLoc(), i32Ty, builder_->getI32IntegerAttr(1));
+    builder_->create<arc::AssignOp>(builder_->getUnknownLoc(), varI.getResult(),
+                                    one);
+    builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
+  }
+
+  {
+    auto& block = loopOp.getUpdateRegion().emplaceBlock();
+    builder_->setInsertionPointToEnd(&block);
+    builder_->create<arc::YieldOp>(builder_->getUnknownLoc());
+  }
+
+  builder_->setInsertionPointAfter(loopOp);
+  builder_->create<arc::ReturnOp>(builder_->getUnknownLoc(),
+                                  entryBlock.getArgument(0));
+
+  std::string printed;
+  llvm::raw_string_ostream os(printed);
+  module->print(os);
+
+  EXPECT_NE(printed.find("arc.loop"), std::string::npos)
+      << "Printed output should contain 'arc.loop'";
+  EXPECT_NE(printed.find("condition_first"), std::string::npos)
+      << "Printed output should contain 'condition_first'";
+  EXPECT_NE(printed.find("invariant"), std::string::npos)
+      << "Printed output should contain 'invariant'";
+  EXPECT_NE(printed.find("variant"), std::string::npos)
+      << "Printed output should contain 'variant'";
+  EXPECT_NE(printed.find("assigns"), std::string::npos)
+      << "Printed output should contain 'assigns'";
+  EXPECT_NE(printed.find("arc.condition"), std::string::npos)
+      << "Printed output should contain 'arc.condition'";
+  EXPECT_NE(printed.find("arc.yield"), std::string::npos)
+      << "Printed output should contain 'arc.yield'";
+  EXPECT_NE(printed.find("arc.assign"), std::string::npos)
+      << "Printed output should contain 'arc.assign'";
+
+  module->destroy();
+}
+
 } // namespace
 } // namespace arcanum
