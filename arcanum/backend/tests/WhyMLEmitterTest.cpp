@@ -98,6 +98,40 @@ TEST(WhyMLEmitterTest, LocationMapPopulated) {
   EXPECT_FALSE(result->locationMap.empty());
 }
 
+// --- Coverage gap C1: moduleToFuncMap population ---
+
+TEST(WhyMLEmitterTest, PopulatesModuleToFuncMap) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: a >= 0 && a <= 1000
+    //@ requires: b >= 0 && b <= 1000
+    //@ ensures: \result >= 0 && \result <= 2000
+    int32_t safe_add(int32_t a, int32_t b) {
+      return a + b;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  // moduleToFuncMap should be populated by the emitter
+  EXPECT_FALSE(result->moduleToFuncMap.empty());
+  // The emitter converts snake_case "safe_add" to CamelCase "SafeAdd" for
+  // the WhyML module name, and maps it back to the original function name.
+  auto it = result->moduleToFuncMap.find("SafeAdd");
+  ASSERT_NE(it, result->moduleToFuncMap.end());
+  EXPECT_EQ(it->second, "safe_add");
+}
+
 // TC-18: Test subtraction overflow assertion
 TEST(WhyMLEmitterTest, EmitsSubtractionOverflowAssertion) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
