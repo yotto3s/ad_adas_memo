@@ -1377,6 +1377,140 @@ TEST(WhyMLEmitterTest, EmitsDoWhileLoopAsRecursiveFunction) {
   EXPECT_NE(result->whymlText.find("let rec"), std::string::npos);
 }
 
+TEST(WhyMLEmitterTest, EmitsBreakAsEarlyReturn) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n > 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t find_first_even(int32_t n) {
+      int32_t result = 0;
+      //@ loop_invariant: i >= 0 && i <= n
+      //@ loop_assigns: i, result
+      for (int32_t i = 0; i < n; i = i + 1) {
+        if (i % 2 == 0) {
+          result = i;
+          break;
+        }
+      }
+      return result;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("let rec"), std::string::npos);
+}
+
+// [TC-1/TC-2] Test: continue emits as recursive call with proper control flow.
+TEST(WhyMLEmitterTest, EmitsContinueAsRecursiveCall) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n > 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t sum_odd(int32_t n) {
+      int32_t sum = 0;
+      int32_t i = 0;
+      //@ loop_invariant: i >= 0 && i <= n && sum >= 0
+      //@ loop_variant: n - i
+      //@ loop_assigns: i, sum
+      while (i < n) {
+        i = i + 1;
+        if (i % 2 == 0) {
+          continue;
+        }
+        sum = sum + i;
+      }
+      return sum;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  const auto& text = result->whymlText;
+  EXPECT_NE(text.find("let rec"), std::string::npos)
+      << "Should emit a recursive function";
+  // The continue path should produce an if-then-else where the then-branch
+  // recurses and the else-branch contains the rest of the body.
+  EXPECT_NE(text.find("loop_"), std::string::npos)
+      << "Should contain a recursive call";
+  // Verify no "else ()" inside the loop body -- the else branch should
+  // contain actual code, not unit.
+  auto letRecPos = text.find("let rec");
+  auto inPos = text.find("\n    in\n", letRecPos);
+  ASSERT_NE(letRecPos, std::string::npos);
+  ASSERT_NE(inPos, std::string::npos);
+  auto loopBody = text.substr(letRecPos, inPos - letRecPos);
+  EXPECT_EQ(loopBody.find("else\n    ()"), std::string::npos)
+      << "Continue if-then-else should not have () in else branch";
+}
+
+// [TC-3] Test: nested loops emit as nested recursive functions.
+TEST(WhyMLEmitterTest, EmitsNestedLoopsAsNestedRecursiveFunctions) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n >= 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t sum_triangle(int32_t n) {
+      int32_t sum = 0;
+      //@ loop_invariant: i >= 0 && i <= n && sum >= 0
+      //@ loop_assigns: i, sum
+      for (int32_t i = 0; i < n; i = i + 1) {
+        //@ loop_invariant: j >= 0 && j <= i
+        //@ loop_assigns: j, sum
+        for (int32_t j = 0; j <= i; j = j + 1) {
+          sum = sum + 1;
+        }
+      }
+      return sum;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  const auto& text = result->whymlText;
+  // Count distinct "let rec" definitions -- should have at least 2.
+  size_t letRecCount = 0;
+  size_t pos = 0;
+  while ((pos = text.find("let rec", pos)) != std::string::npos) {
+    ++letRecCount;
+    pos += 7;
+  }
+  EXPECT_GE(letRecCount, 2u)
+      << "Nested loops should produce two distinct 'let rec' definitions.\n"
+      << "Full WhyML output:\n"
+      << text;
+}
+
 // [TC-4] Strengthened: verify assigned variable names appear as parameters.
 TEST(WhyMLEmitterTest, ForLoopAssignedVarsAppearAsParameters) {
   auto ast = clang::tooling::buildASTFromCodeWithArgs(
