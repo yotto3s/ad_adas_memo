@@ -4,6 +4,8 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 
+#include "llvm/ADT/StringRef.h"
+
 #include <map>
 #include <memory>
 #include <string>
@@ -89,6 +91,22 @@ struct ContractInfo {
   std::vector<ContractExprPtr> postconditions;
   std::string overflowMode = "trap";
 };
+
+/// Loop-level contract information, parsed from //@ loop_* annotations.
+struct LoopContractInfo {
+  std::string invariant;            // Conjoined with " && " from multiple lines
+  std::string variant;              // Single arithmetic expression
+  std::vector<std::string> assigns; // Comma-separated variable names
+  std::string label;                // Optional loop label
+};
+
+/// Extract //@ annotation payload lines from a raw comment block.
+/// Each returned string has the "//@ " prefix stripped.
+std::vector<std::string> extractAnnotationLines(llvm::StringRef commentText);
+
+/// Parse a single loop annotation line into a LoopContractInfo.
+/// Lines must already have the "//@ " prefix stripped (just the payload).
+void applyLoopAnnotationLine(llvm::StringRef line, LoopContractInfo& info);
 
 /// Parse //@ requires: and //@ ensures: annotations from raw comments,
 /// associating them with the FunctionDecl they immediately precede.

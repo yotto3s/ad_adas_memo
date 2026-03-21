@@ -137,42 +137,6 @@ INSTANTIATE_TEST_SUITE_P(
     }
   )",
                                              "namespace"},
-                      RejectedConstructParam{"ForLoop",
-                                             R"(
-    #include <cstdint>
-    int32_t sum(int32_t n) {
-      int32_t s = 0;
-      for (int32_t i = 0; i < n; i = i + 1) {
-        s = s + i;
-      }
-      return s;
-    }
-  )",
-                                             "for loop"},
-                      RejectedConstructParam{"WhileLoop",
-                                             R"(
-    #include <cstdint>
-    int32_t count(int32_t n) {
-      int32_t i = 0;
-      while (i < n) {
-        i = i + 1;
-      }
-      return i;
-    }
-  )",
-                                             "while loop"},
-                      RejectedConstructParam{"DoWhileLoop",
-                                             R"(
-    #include <cstdint>
-    int32_t count(int32_t n) {
-      int32_t i = 0;
-      do {
-        i = i + 1;
-      } while (i < n);
-      return i;
-    }
-  )",
-                                             "do-while"},
                       RejectedConstructParam{"SwitchStatement",
                                              R"(
     #include <cstdint>
@@ -214,8 +178,31 @@ INSTANTIATE_TEST_SUITE_P(
       return a;
     }
   )",
-                                             "floating-point"}),
+                                             "floating-point"},
+                      // Note: BreakOutsideLoop uses break-in-switch because
+                      // switch is rejected first.  Bare break outside any
+                      // loop/switch is a Clang parse error and cannot reach
+                      // SubsetEnforcer.  The loopDepth==0 check in
+                      // VisitBreakStmt is a defensive measure.
+                      RejectedConstructParam{"BreakOutsideLoop",
+                                             R"(
+    #include <cstdint>
+    int32_t bad(int32_t x) {
+      switch (x) {
+        case 0: break;
+        default: break;
+      }
+      return x;
+    }
+  )",
+                                             "break"}),
     RejectedConstructName{});
+
+// [SC-5/TC-6] ContinueOutsideLoop: Clang rejects `continue` outside a loop
+// at parse time (Sema error), so it is impossible to build an AST with a bare
+// continue-outside-loop.  The defensive check in VisitContinueStmt (loopDepth
+// == 0) can never fire in practice.  No test is added because
+// clang::tooling::buildASTFromCode would return null for such code.
 
 // ---------------------------------------------------------------------------
 // Parameterized: Accepted constructs
@@ -298,6 +285,93 @@ INSTANTIATE_TEST_SUITE_P(
                       AcceptedConstructParam{"VoidReturnFunction",
                                              R"(
     void doNothing() { }
+  )"},
+                      AcceptedConstructParam{"ForLoopWithInvariant",
+                                             R"(
+    #include <cstdint>
+    //@ requires: n >= 0 && n <= 1000
+    //@ ensures: \result >= 0
+    int32_t sum(int32_t n) {
+      int32_t s = 0;
+      //@ loop_invariant: s >= 0
+      //@ loop_invariant: i >= 0 && i <= n
+      //@ loop_assigns: i, s
+      for (int32_t i = 0; i < n; i = i + 1) {
+        s = s + i;
+      }
+      return s;
+    }
+  )"},
+                      AcceptedConstructParam{"WhileLoopWithInvariant",
+                                             R"(
+    #include <cstdint>
+    //@ requires: x > 0
+    //@ ensures: \result >= 0
+    int32_t halve(int32_t x) {
+      //@ loop_invariant: x >= 0
+      //@ loop_variant: x
+      //@ loop_assigns: x
+      while (x > 0) {
+        x = x / 2;
+      }
+      return x;
+    }
+  )"},
+                      AcceptedConstructParam{"DoWhileLoopWithInvariant",
+                                             R"(
+    #include <cstdint>
+    //@ requires: x > 0 && x <= 1000
+    //@ ensures: \result >= 1
+    int32_t count_digits(int32_t x) {
+      int32_t count = 0;
+      //@ loop_invariant: count >= 0 && x >= 0
+      //@ loop_variant: x
+      //@ loop_assigns: x, count
+      do {
+        x = x / 10;
+        count = count + 1;
+      } while (x > 0);
+      return count;
+    }
+  )"},
+                      AcceptedConstructParam{"ForLoopWithBreak",
+                                             R"(
+    #include <cstdint>
+    //@ requires: n > 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t find_even(int32_t n) {
+      int32_t result = 0;
+      //@ loop_invariant: i >= 0 && i <= n
+      //@ loop_assigns: i, result
+      for (int32_t i = 0; i < n; i = i + 1) {
+        if (i % 2 == 0) {
+          result = i;
+          break;
+        }
+      }
+      return result;
+    }
+  )"},
+                      AcceptedConstructParam{"WhileLoopWithContinue",
+                                             R"(
+    #include <cstdint>
+    //@ requires: n > 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t sum_odd(int32_t n) {
+      int32_t sum = 0;
+      int32_t i = 0;
+      //@ loop_invariant: i >= 0 && i <= n && sum >= 0
+      //@ loop_variant: n - i
+      //@ loop_assigns: i, sum
+      while (i < n) {
+        i = i + 1;
+        if (i % 2 == 0) {
+          continue;
+        }
+        sum = sum + i;
+      }
+      return sum;
+    }
   )"}),
     AcceptedConstructName{});
 
