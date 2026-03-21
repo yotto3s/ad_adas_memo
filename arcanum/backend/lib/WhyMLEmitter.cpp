@@ -5,10 +5,12 @@
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Location.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cassert>
 #include <string>
 
 namespace arcanum {
@@ -346,6 +348,77 @@ std::optional<std::string> writeToTempFile(const std::string& text) {
   return tmpPath.str().str();
 }
 
+/// Parse a comma-separated list of variable names from an "assigns" attribute.
+/// Input: "i, sum"  ->  Output: ["i", "sum"]
+/// NOTE (CQ-2): Duplicates parseCommaSeparatedIdents in ContractParser.cpp.
+/// Consolidation deferred: different build targets (frontend vs backend) use
+/// different container types (std::vector vs llvm::SmallVector).
+llvm::SmallVector<std::string> parseAssignsList(llvm::StringRef assigns) {
+  llvm::SmallVector<std::string> vars;
+  llvm::SmallVector<llvm::StringRef> parts;
+  assigns.split(parts, ',');
+  for (auto part : parts) {
+    auto trimmed = part.trim();
+    if (!trimmed.empty()) {
+      vars.push_back(trimmed.str());
+    }
+  }
+  return vars;
+}
+
+/// Context for the current loop being emitted, used by break/continue
+/// to know which variables to return or pass to the recursive call.
+struct LoopContext {
+  std::string loopFuncName;
+  llvm::SmallVector<std::string> assignedVars;
+  bool hasUpdateRegion = false;
+  mlir::Region* updateRegion = nullptr;
+};
+
+/// Build a WhyML tuple expression from a list of variable names.
+/// Single variable: "x", Multiple: "(x, y, z)"
+/// Asserts that vars is non-empty (empty produces invalid WhyML).
+std::string buildTupleExpr(const llvm::SmallVector<std::string>& vars) {
+  assert(!vars.empty() && "buildTupleExpr requires non-empty variable list");
+  if (vars.size() == 1) {
+    return vars[0];
+  }
+  std::string result = "(";
+  for (size_t i = 0; i < vars.size(); ++i) {
+    if (i > 0) {
+      result += ", ";
+    }
+    result += vars[i];
+  }
+  result += ")";
+  return result;
+}
+
+/// Build a WhyML tuple type from a count of int variables.
+/// Single variable: "int", Multiple: "(int, int, ...)"
+/// Asserts that count is non-zero (zero produces invalid WhyML).
+///
+/// Known limitation (CR-6): hardcodes all loop variables to "int".
+/// Correct for Slices 1-3 (only int32_t supported), but future slices
+/// adding bool or other types will need collectAssignedVars to return
+/// name+type pairs and this function to emit the correct WhyML type
+/// per variable.
+std::string buildTupleType(size_t count) {
+  assert(count > 0 && "buildTupleType requires non-zero count");
+  if (count == 1) {
+    return "int";
+  }
+  std::string result = "(";
+  for (size_t i = 0; i < count; ++i) {
+    if (i > 0) {
+      result += ", ";
+    }
+    result += "int";
+  }
+  result += ")";
+  return result;
+}
+
 /// Map a comparison predicate string to the corresponding WhyML operator.
 /// Returns "=" as a default and emits a warning for unknown predicates.
 llvm::StringRef predicateToWhyMLOp(llvm::StringRef pred) {
@@ -529,6 +602,99 @@ private:
         "(" + lhs + " " + whymlOp.str() + " " + rhs + ")";
   }
 
+  /// Check whether a region contains an arc.break op (direct child only).
+  bool regionContainsBreak(mlir::Region& region) {
+    if (region.empty()) {
+      return false;
+    }
+    return std::ranges::any_of(region.front().getOperations(), [](auto& op) {
+      return llvm::isa<arc::BreakOp>(&op);
+    });
+  }
+
+  /// Check whether a region contains an arc.continue op (direct child only).
+  bool regionContainsContinue(mlir::Region& region) {
+    if (region.empty()) {
+      return false;
+    }
+    return std::ranges::any_of(region.front().getOperations(), [](auto& op) {
+      return llvm::isa<arc::ContinueOp>(&op);
+    });
+  }
+
+  /// Check whether break/continue appears in an unsupported structural
+  /// context within the loop body. Returns true (and emits a diagnostic)
+  /// if break/continue is found inside a nested IfOp (an IfOp that is
+  /// not a direct child of the body block) or inside an IfOp that has
+  /// an else region. These patterns produce invalid WhyML because the
+  /// emission restructuring only handles single-level, then-only IfOps.
+  /// Known Slice 3 limitation (CR-2).
+  bool hasUnsupportedBreakContinue(arc::LoopOp loopOp) {
+    if (loopOp.getBodyRegion().empty()) {
+      return false;
+    }
+    return detectUnsupportedBreakContinueInBlock(loopOp.getBodyRegion().front(),
+                                                 loopOp, /*depth=*/0);
+  }
+
+  /// Recursively walk a block looking for break/continue in unsupported
+  /// positions. `depth` counts nesting of IfOps from the body block root.
+  bool detectUnsupportedBreakContinueInBlock(mlir::Block& block,
+                                             arc::LoopOp loopOp,
+                                             unsigned depth) {
+    for (auto& op : block.getOperations()) {
+      if (auto ifOp = llvm::dyn_cast<arc::IfOp>(&op)) {
+        if (detectUnsupportedBreakContinueInIf(ifOp, loopOp, depth)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Check an IfOp for unsupported break/continue patterns.
+  /// Unsupported if: (a) the IfOp has an else region and contains
+  /// break/continue in either branch, or (b) break/continue is nested
+  /// deeper than one IfOp level from the body block root.
+  bool detectUnsupportedBreakContinueInIf(arc::IfOp ifOp, arc::LoopOp loopOp,
+                                          unsigned depth) {
+    bool thenHasBC = regionContainsBreak(ifOp.getThenRegion()) ||
+                     regionContainsContinue(ifOp.getThenRegion());
+    bool elseHasBC = regionContainsBreak(ifOp.getElseRegion()) ||
+                     regionContainsContinue(ifOp.getElseRegion());
+
+    // Case (a): break/continue in an if with an else branch
+    if (!ifOp.getElseRegion().empty() && (thenHasBC || elseHasBC)) {
+      loopOp.emitError("break/continue inside if-else is not supported in "
+                       "Slice 3; restructure the loop to use break/continue "
+                       "in if-then (no else) only");
+      return true;
+    }
+
+    // Case (b): break/continue nested deeper than one IfOp from body root
+    if (depth > 0 && thenHasBC) {
+      loopOp.emitError(
+          "break/continue inside nested if is not supported in "
+          "Slice 3; only single-level if-then break/continue is handled");
+      return true;
+    }
+
+    // Recurse into then/else regions at increased depth
+    if (!ifOp.getThenRegion().empty()) {
+      if (detectUnsupportedBreakContinueInBlock(ifOp.getThenRegion().front(),
+                                                loopOp, depth + 1)) {
+        return true;
+      }
+    }
+    if (!ifOp.getElseRegion().empty()) {
+      if (detectUnsupportedBreakContinueInBlock(ifOp.getElseRegion().front(),
+                                                loopOp, depth + 1)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Emit an IfOp: condition, then/else regions, empty-else fallback.
   void emitIfOp(arc::IfOp ifOp, llvm::raw_string_ostream& out,
                 llvm::DenseMap<mlir::Value, std::string>& nameMap) {
@@ -556,6 +722,376 @@ private:
       out << "    else\n";
       out << "    ()\n";
     }
+  }
+
+  /// Extract the condition expression string from a loop's cond region.
+  /// Walks all ops in the region (registering them in nameMap) and returns
+  /// the WhyML expression for the ConditionOp's operand.
+  std::string
+  extractConditionExpr(mlir::Region& condRegion, llvm::raw_string_ostream& out,
+                       llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+    if (condRegion.empty()) {
+      return "true";
+    }
+    for (auto& op : condRegion.front().getOperations()) {
+      if (auto condOp = llvm::dyn_cast<arc::ConditionOp>(&op)) {
+        return getExpr(condOp.getCondition(), nameMap);
+      }
+      emitOp(op, out, nameMap);
+    }
+    return "true";
+  }
+
+  /// Emit the recursive function signature for a loop.
+  /// Format: let rec loop_N (var1: int) (var2: int) : (int, int)
+  void emitLoopSignature(llvm::raw_string_ostream& out,
+                         const std::string& loopFuncName,
+                         const llvm::SmallVector<std::string>& vars) {
+    out << "    let rec " << loopFuncName << " ";
+    for (const auto& var : vars) {
+      out << "(" << var << ": int) ";
+    }
+    out << ": " << buildTupleType(vars.size()) << "\n";
+  }
+
+  /// Emit loop contract clauses (requires from invariant, variant).
+  void emitLoopContracts(llvm::raw_string_ostream& out, arc::LoopOp loopOp) {
+    if (auto invAttr = loopOp->getAttrOfType<mlir::StringAttr>("invariant")) {
+      out << "      requires { " << contractToWhyML(invAttr.getValue())
+          << " }\n";
+    }
+    if (auto varAttr = loopOp->getAttrOfType<mlir::StringAttr>("variant")) {
+      out << "      variant  { " << contractToWhyML(varAttr.getValue())
+          << " }\n";
+    }
+  }
+
+  /// Emit the initial call to the loop function and unpack results.
+  /// Format: let (v1, v2) = loop_N v1_init v2_init in
+  void emitLoopCall(llvm::raw_string_ostream& out,
+                    const std::string& loopFuncName,
+                    const llvm::SmallVector<std::string>& vars,
+                    const llvm::SmallVector<std::string>& initExprs) {
+    out << "    let " << buildTupleExpr(vars) << " = " << loopFuncName;
+    for (const auto& initExpr : initExprs) {
+      out << " " << initExpr;
+    }
+    out << " in\n";
+  }
+
+  /// Emit a LoopOp as a recursive WhyML function.
+  /// Handles for-loops (condition_first + init/update regions),
+  /// while-loops (condition_first, no init/update), and
+  /// do-while-loops (!condition_first).
+  void emitLoopOp(arc::LoopOp loopOp, llvm::raw_string_ostream& out,
+                  llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+    auto assignedVars = collectAssignedVars(loopOp);
+    if (assignedVars.empty()) {
+      loopOp.emitWarning("loop has no assigned variables; skipping emission");
+      return;
+    }
+
+    if (hasUnsupportedBreakContinue(loopOp)) {
+      return;
+    }
+
+    auto loopFuncName = "loop_" + std::to_string(loopCounter++);
+    bool condFirst = isConditionFirst(loopOp);
+
+    emitInitRegion(loopOp, out, nameMap);
+    preMapLoopVariableValues(loopOp, assignedVars, nameMap);
+    auto initExprs = captureInitialValues(assignedVars);
+
+    bool hasUpdate = !loopOp.getUpdateRegion().empty();
+    LoopContext loopCtx{.loopFuncName = loopFuncName,
+                        .assignedVars = assignedVars,
+                        .hasUpdateRegion = hasUpdate,
+                        .updateRegion = &loopOp.getUpdateRegion()};
+    auto* prevLoop = currentLoop;
+    currentLoop = &loopCtx;
+
+    emitLoopSignature(out, loopFuncName, assignedVars);
+    emitLoopContracts(out, loopOp);
+    out << "    =\n";
+
+    if (condFirst) {
+      emitConditionFirstBody(loopOp, out, nameMap, loopFuncName, assignedVars);
+    } else {
+      emitBodyFirstBody(loopOp, out, nameMap, loopFuncName, assignedVars);
+    }
+
+    out << "    in\n";
+
+    currentLoop = prevLoop;
+    emitLoopCall(out, loopFuncName, assignedVars, initExprs);
+    // Re-map loop variable Values after the loop call so subsequent ops
+    // (e.g., ReturnOp) resolve to the variable names, not stale expressions.
+    preMapLoopVariableValues(loopOp, assignedVars, nameMap);
+  }
+
+  /// Parse the assigns attribute and return the list of variable names.
+  llvm::SmallVector<std::string> collectAssignedVars(arc::LoopOp loopOp) {
+    if (auto assignsAttr = loopOp->getAttrOfType<mlir::StringAttr>("assigns")) {
+      return parseAssignsList(assignsAttr.getValue());
+    }
+    return {};
+  }
+
+  /// Check whether this loop is condition-first (for/while) or
+  /// body-first (do-while).
+  bool isConditionFirst(arc::LoopOp loopOp) {
+    if (auto condFirstAttr =
+            loopOp->getAttrOfType<mlir::BoolAttr>("condition_first")) {
+      return condFirstAttr.getValue();
+    }
+    return true;
+  }
+
+  /// Process ops in the init region (for for-loops with variable declarations).
+  void emitInitRegion(arc::LoopOp loopOp, llvm::raw_string_ostream& out,
+                      llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+    emitRegionOps(loopOp.getInitRegion(), out, nameMap);
+  }
+
+  /// Capture the current WhyML expressions for the assigned variables,
+  /// to use as initial arguments to the recursive function call.
+  llvm::SmallVector<std::string>
+  captureInitialValues(const llvm::SmallVector<std::string>& vars) {
+    return {vars.begin(), vars.end()};
+  }
+
+  /// Map all MLIR Values that represent loop variables to their variable
+  /// names in nameMap. The lowering's shared ValueMap causes cross-region
+  /// Value references: body ops may reference update region Values for
+  /// loop variables. This method walks ALL loop regions to find every
+  /// Value associated with a loop variable (VarOp results and AssignOp
+  /// value operands), ensuring that any op referencing a loop variable
+  /// resolves to the correct name regardless of which region defined it.
+  void
+  preMapLoopVariableValues(arc::LoopOp loopOp,
+                           const llvm::SmallVector<std::string>& assignedVars,
+                           llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+    llvm::StringSet<> assignedSet;
+    for (const auto& var : assignedVars) {
+      assignedSet.insert(var);
+    }
+
+    auto mapRegionValues = [&](mlir::Region& region) {
+      if (region.empty()) {
+        return;
+      }
+      for (auto& op : region.front().getOperations()) {
+        if (auto varOp = llvm::dyn_cast<arc::VarOp>(&op)) {
+          if (assignedSet.contains(varOp.getName())) {
+            nameMap[varOp.getResult()] = varOp.getName().str();
+          }
+        } else if (auto assignOp = llvm::dyn_cast<arc::AssignOp>(&op)) {
+          mapAssignOpValueIfLoopVar(assignOp, assignedSet, nameMap);
+        }
+      }
+    };
+
+    mapRegionValues(loopOp.getInitRegion());
+    mapRegionValues(loopOp.getCondRegion());
+    mapRegionValues(loopOp.getUpdateRegion());
+    mapRegionValues(loopOp.getBodyRegion());
+  }
+
+  /// If an AssignOp targets a loop variable, map its value operand to the
+  /// variable name. This handles the case where the lowering updated the
+  /// shared ValueMap to point to an intermediate expression (e.g., `i + 1`
+  /// from the update region) -- we map that expression Value to the
+  /// variable name so any consumer sees the variable name, not the
+  /// expression.
+  void
+  mapAssignOpValueIfLoopVar(arc::AssignOp assignOp,
+                            const llvm::StringSet<>& assignedSet,
+                            llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+    if (auto* defOp = assignOp.getTarget().getDefiningOp()) {
+      if (auto varOp = llvm::dyn_cast<arc::VarOp>(defOp)) {
+        if (assignedSet.contains(varOp.getName())) {
+          nameMap[assignOp.getValue()] = varOp.getName().str();
+        }
+      }
+    }
+  }
+
+  /// Emit the body of a condition-first loop (for/while):
+  /// if cond then body; update; recurse else return vars
+  void
+  emitConditionFirstBody(arc::LoopOp loopOp, llvm::raw_string_ostream& out,
+                         llvm::DenseMap<mlir::Value, std::string>& nameMap,
+                         const std::string& loopFuncName,
+                         const llvm::SmallVector<std::string>& assignedVars) {
+    std::string condBuf;
+    llvm::raw_string_ostream condOut(condBuf);
+    auto condExpr =
+        extractConditionExpr(loopOp.getCondRegion(), condOut, nameMap);
+    out << condBuf;
+
+    out << "      if " << condExpr << " then\n";
+    emitLoopBodyWithControlFlow(loopOp.getBodyRegion(),
+                                &loopOp.getUpdateRegion(), out, nameMap,
+                                loopFuncName, assignedVars);
+    out << "      else\n";
+    out << "        " << buildTupleExpr(assignedVars) << "\n";
+  }
+
+  /// Emit the body of a body-first loop (do-while):
+  /// body; if cond then recurse else return vars
+  void emitBodyFirstBody(arc::LoopOp loopOp, llvm::raw_string_ostream& out,
+                         llvm::DenseMap<mlir::Value, std::string>& nameMap,
+                         const std::string& loopFuncName,
+                         const llvm::SmallVector<std::string>& assignedVars) {
+    // do-while has no update region; pass nullptr instead of a
+    // stack-allocated Region (CR-3).
+    emitLoopBodyWithControlFlow(loopOp.getBodyRegion(), nullptr, out, nameMap,
+                                loopFuncName, assignedVars);
+
+    std::string condBuf;
+    llvm::raw_string_ostream condOut(condBuf);
+    auto condExpr =
+        extractConditionExpr(loopOp.getCondRegion(), condOut, nameMap);
+    out << condBuf;
+
+    out << "      if " << condExpr << " then\n";
+    emitRecursiveCall(out, loopFuncName, assignedVars);
+    out << "      else\n";
+    out << "        " << buildTupleExpr(assignedVars) << "\n";
+  }
+
+  /// Emit loop body ops with proper control flow for break/continue.
+  /// When an IfOp contains break or continue in its then-region (with no
+  /// else-region), the emission restructures it: the if-then branch gets the
+  /// break/continue action, and the else branch gets the rest of the body
+  /// plus update + recursive call. This ensures WhyML branch types match.
+  /// \param updateRegion Nullable; nullptr for do-while loops (no update).
+  void emitLoopBodyWithControlFlow(
+      mlir::Region& bodyRegion, mlir::Region* updateRegion,
+      llvm::raw_string_ostream& out,
+      llvm::DenseMap<mlir::Value, std::string>& nameMap,
+      const std::string& loopFuncName,
+      const llvm::SmallVector<std::string>& assignedVars) {
+    if (bodyRegion.empty()) {
+      if (updateRegion != nullptr) {
+        emitRegionOps(*updateRegion, out, nameMap);
+      }
+      emitRecursiveCall(out, loopFuncName, assignedVars);
+      return;
+    }
+
+    auto& ops = bodyRegion.front().getOperations();
+    emitBodyOpsFrom(ops.begin(), ops.end(), updateRegion, out, nameMap,
+                    loopFuncName, assignedVars);
+  }
+
+  /// Emit body ops starting from `it`, handling break/continue-containing
+  /// IfOps by restructuring them into proper if-then-else.
+  /// \param updateRegion Nullable; nullptr for do-while loops (no update).
+  void emitBodyOpsFrom(mlir::Block::iterator it, mlir::Block::iterator end,
+                       mlir::Region* updateRegion,
+                       llvm::raw_string_ostream& out,
+                       llvm::DenseMap<mlir::Value, std::string>& nameMap,
+                       const std::string& loopFuncName,
+                       const llvm::SmallVector<std::string>& assignedVars) {
+    for (; it != end; ++it) {
+      auto& op = *it;
+      if (llvm::isa<arc::YieldOp>(&op)) {
+        continue;
+      }
+
+      if (auto ifOp = llvm::dyn_cast<arc::IfOp>(&op)) {
+        if (ifOp.getElseRegion().empty() && isBreakOrContinueIf(ifOp)) {
+          emitBreakContinueIf(ifOp, std::next(it), end, updateRegion, out,
+                              nameMap, loopFuncName, assignedVars);
+          return;
+        }
+      }
+
+      emitOp(op, out, nameMap);
+    }
+
+    // After all body ops, emit update + recursive call (normal path)
+    if (updateRegion != nullptr) {
+      emitRegionOps(*updateRegion, out, nameMap);
+    }
+    emitRecursiveCall(out, loopFuncName, assignedVars);
+  }
+
+  /// Check if an IfOp's then-region contains a break or continue.
+  bool isBreakOrContinueIf(arc::IfOp ifOp) {
+    return regionContainsBreak(ifOp.getThenRegion()) ||
+           regionContainsContinue(ifOp.getThenRegion());
+  }
+
+  /// Emit an IfOp that contains break or continue, restructured so:
+  /// - then-branch: ops before break/continue + break/continue action
+  /// - else-branch: remaining body ops + update + recursive call
+  /// \param updateRegion Nullable; nullptr for do-while loops (no update).
+  void emitBreakContinueIf(arc::IfOp ifOp, mlir::Block::iterator restBegin,
+                           mlir::Block::iterator restEnd,
+                           mlir::Region* updateRegion,
+                           llvm::raw_string_ostream& out,
+                           llvm::DenseMap<mlir::Value, std::string>& nameMap,
+                           const std::string& loopFuncName,
+                           const llvm::SmallVector<std::string>& assignedVars) {
+    auto cond = getExpr(ifOp.getCondition(), nameMap);
+    out << "    if " << cond << " then\n";
+
+    // Emit then-branch: ops in the then-region (excluding break/continue),
+    // then the break/continue action
+    if (!ifOp.getThenRegion().empty()) {
+      for (auto& thenOp : ifOp.getThenRegion().front().getOperations()) {
+        if (llvm::isa<arc::BreakOp>(&thenOp)) {
+          // break = return current values (exit loop)
+          out << "        " << buildTupleExpr(currentLoop->assignedVars)
+              << "\n";
+          break;
+        }
+        if (llvm::isa<arc::ContinueOp>(&thenOp)) {
+          // continue = emit update (for for-loops) + recurse
+          if (updateRegion != nullptr) {
+            emitRegionOps(*updateRegion, out, nameMap);
+          }
+          emitRecursiveCall(out, currentLoop->loopFuncName,
+                            currentLoop->assignedVars);
+          break;
+        }
+        emitOp(thenOp, out, nameMap);
+      }
+    }
+
+    out << "    else\n";
+
+    // Emit else-branch: remaining body ops + update + recursive call
+    emitBodyOpsFrom(restBegin, restEnd, updateRegion, out, nameMap,
+                    loopFuncName, assignedVars);
+  }
+
+  /// Emit all ops from a region, skipping YieldOp terminators.
+  /// Shared helper for body, update, and init region emission.
+  void emitRegionOps(mlir::Region& region, llvm::raw_string_ostream& out,
+                     llvm::DenseMap<mlir::Value, std::string>& nameMap) {
+    if (region.empty()) {
+      return;
+    }
+    for (auto& op : region.front().getOperations()) {
+      if (llvm::isa<arc::YieldOp>(&op)) {
+        continue;
+      }
+      emitOp(op, out, nameMap);
+    }
+  }
+
+  /// Emit a recursive call to the loop function with current variable values.
+  void emitRecursiveCall(llvm::raw_string_ostream& out,
+                         const std::string& loopFuncName,
+                         const llvm::SmallVector<std::string>& vars) {
+    out << "        " << loopFuncName;
+    for (const auto& var : vars) {
+      out << " " << var;
+    }
+    out << "\n";
   }
 
   void emitOp(mlir::Operation& op, llvm::raw_string_ostream& out,
@@ -626,6 +1162,28 @@ private:
       nameMap[assignOp.getTarget()] = value;
     } else if (auto ifOp = llvm::dyn_cast<arc::IfOp>(&op)) {
       emitIfOp(ifOp, out, nameMap);
+    } else if (auto loopOp = llvm::dyn_cast<arc::LoopOp>(&op)) {
+      emitLoopOp(loopOp, out, nameMap);
+    } else if (llvm::isa<arc::BreakOp>(&op)) {
+      // break/continue are handled by emitBreakContinueIf when inside a
+      // restructured loop body. This path is reached only as a fallback
+      // (e.g., bare break/continue not inside an if).
+      assert(currentLoop && "arc.break encountered outside of a loop context");
+      out << "        " << buildTupleExpr(currentLoop->assignedVars) << "\n";
+    } else if (llvm::isa<arc::ContinueOp>(&op)) {
+      assert(currentLoop &&
+             "arc.continue encountered outside of a loop context");
+      // For for-loops, emit update before recursing
+      if (currentLoop->hasUpdateRegion &&
+          (currentLoop->updateRegion != nullptr)) {
+        emitRegionOps(*currentLoop->updateRegion, out, nameMap);
+      }
+      emitRecursiveCall(out, currentLoop->loopFuncName,
+                        currentLoop->assignedVars);
+    } else if (llvm::isa<arc::YieldOp>(&op) ||
+               llvm::isa<arc::ConditionOp>(&op)) {
+      // YieldOp and ConditionOp are handled by their enclosing loop/region
+      // emitters, not by the general emitOp dispatch.
     }
   }
 
@@ -644,6 +1202,8 @@ private:
   }
 
   mlir::ModuleOp module;
+  unsigned loopCounter = 0;
+  LoopContext* currentLoop = nullptr;
 };
 
 } // namespace

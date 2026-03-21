@@ -1271,5 +1271,272 @@ TEST_F(WhyMLEmitterSlice2Test, UnsignedToSignedSameWidthCastAssertsRange) {
       << result->whymlText;
 }
 
+// --- Slice 3: Loop emission tests ---
+
+TEST(WhyMLEmitterTest, EmitsForLoopAsRecursiveFunction) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n >= 0 && n <= 1000
+    //@ ensures: \result >= 0
+    int32_t sum_to_n(int32_t n) {
+      int32_t sum = 0;
+      //@ loop_invariant: sum >= 0 && i >= 0 && i <= n
+      //@ loop_variant: n - i
+      //@ loop_assigns: i, sum
+      for (int32_t i = 0; i < n; i = i + 1) {
+        sum = sum + i;
+      }
+      return sum;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("let rec"), std::string::npos)
+      << "Should emit a recursive function for the loop";
+  EXPECT_NE(result->whymlText.find("requires"), std::string::npos)
+      << "Should emit loop invariant as requires clause";
+  EXPECT_NE(result->whymlText.find("variant"), std::string::npos)
+      << "Should emit loop variant clause";
+  EXPECT_NE(result->whymlText.find("module"), std::string::npos);
+  EXPECT_NE(result->whymlText.find("end"), std::string::npos);
+}
+
+TEST(WhyMLEmitterTest, EmitsWhileLoopAsRecursiveFunction) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: x > 0
+    //@ ensures: \result >= 0
+    int32_t halve_to_zero(int32_t x) {
+      //@ loop_invariant: x >= 0
+      //@ loop_variant: x
+      //@ loop_assigns: x
+      while (x > 0) {
+        x = x / 2;
+      }
+      return x;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("let rec"), std::string::npos);
+  EXPECT_NE(result->whymlText.find("variant"), std::string::npos);
+}
+
+TEST(WhyMLEmitterTest, EmitsDoWhileLoopAsRecursiveFunction) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: x > 0 && x <= 1000
+    //@ ensures: \result >= 1
+    int32_t count_digits(int32_t x) {
+      int32_t count = 0;
+      //@ loop_invariant: count >= 0 && x >= 0
+      //@ loop_variant: x
+      //@ loop_assigns: x, count
+      do {
+        x = x / 10;
+        count = count + 1;
+      } while (x > 0);
+      return count;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  EXPECT_NE(result->whymlText.find("let rec"), std::string::npos);
+}
+
+// [TC-4] Strengthened: verify assigned variable names appear as parameters.
+TEST(WhyMLEmitterTest, ForLoopAssignedVarsAppearAsParameters) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n >= 0 && n <= 1000
+    //@ ensures: \result >= 0
+    int32_t sum_to_n(int32_t n) {
+      int32_t sum = 0;
+      //@ loop_invariant: sum >= 0 && i >= 0 && i <= n
+      //@ loop_variant: n - i
+      //@ loop_assigns: i, sum
+      for (int32_t i = 0; i < n; i = i + 1) {
+        sum = sum + i;
+      }
+      return sum;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  const auto& text = result->whymlText;
+  // Verify assigned variables appear as parameters in the recursive function
+  EXPECT_NE(text.find("(i: int)"), std::string::npos)
+      << "Assigned variable 'i' should appear as a parameter";
+  EXPECT_NE(text.find("(sum: int)"), std::string::npos)
+      << "Assigned variable 'sum' should appear as a parameter";
+}
+
+// ---------------------------------------------------------------------------
+// [TC-5] Tests exercising buildTupleExpr/buildTupleType/parseAssignsList
+// indirectly through the public emitWhyML API.
+// ---------------------------------------------------------------------------
+
+// Single assigned variable: buildTupleType(1) -> "int",
+// buildTupleExpr({"i"}) -> "i" (no parentheses).
+TEST(WhyMLEmitterTest, SingleAssignedVarProducesBareType) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n > 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t countdown(int32_t n) {
+      //@ loop_invariant: n >= 0
+      //@ loop_variant: n
+      //@ loop_assigns: n
+      while (n > 0) {
+        n = n - 1;
+      }
+      return n;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  const auto& text = result->whymlText;
+  // Single var: return type should be "int" not "(int)"
+  EXPECT_NE(text.find(": int"), std::string::npos)
+      << "Single assigned variable should produce bare 'int' return type";
+  // Destructuring should be "let n = loop_" not "let (n) = loop_"
+  EXPECT_NE(text.find("let n = loop_"), std::string::npos)
+      << "Single assigned variable should produce bare name in let binding";
+}
+
+// Multiple assigned variables: buildTupleType(2) -> "(int, int)",
+// buildTupleExpr({"i", "sum"}) -> "(i, sum)".
+TEST(WhyMLEmitterTest, MultipleAssignedVarsProduceTupleType) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n >= 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t sum_up(int32_t n) {
+      int32_t s = 0;
+      //@ loop_invariant: i >= 0 && i <= n && s >= 0
+      //@ loop_variant: n - i
+      //@ loop_assigns: i, s
+      for (int32_t i = 0; i < n; i = i + 1) {
+        s = s + i;
+      }
+      return s;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  const auto& text = result->whymlText;
+  // Multiple vars: return type should be "(int, int)"
+  EXPECT_NE(text.find("(int, int)"), std::string::npos)
+      << "Multiple assigned variables should produce tuple return type";
+  // Destructuring should use tuple: "let (i, s) = loop_"
+  EXPECT_NE(text.find("let (i, s) = loop_"), std::string::npos)
+      << "Multiple assigned variables should produce tuple destructuring";
+}
+
+// Whitespace in assigns attribute: parseAssignsList("  i ,  sum  ") should
+// produce ["i", "sum"] with whitespace trimmed.
+TEST(WhyMLEmitterTest, AssignsWithWhitespaceAreTrimmed) {
+  auto ast = clang::tooling::buildASTFromCodeWithArgs(
+      R"(
+    #include <cstdint>
+    //@ requires: n >= 0 && n <= 100
+    //@ ensures: \result >= 0
+    int32_t sum_up(int32_t n) {
+      int32_t s = 0;
+      //@ loop_invariant: i >= 0 && i <= n && s >= 0
+      //@ loop_variant: n - i
+      //@ loop_assigns:   i ,  s
+      for (int32_t i = 0; i < n; i = i + 1) {
+        s = s + i;
+      }
+      return s;
+    }
+  )",
+      {"-fparse-all-comments"}, "test.cpp", "arcanum-test",
+      std::make_shared<clang::PCHContainerOperations>());
+  ASSERT_NE(ast, nullptr);
+
+  auto contracts = parseContracts(ast->getASTContext());
+  mlir::MLIRContext mlirCtx;
+  auto module = lowerToArc(mlirCtx, ast->getASTContext(), contracts);
+  ASSERT_TRUE(module);
+
+  auto result = emitWhyML(*module);
+  ASSERT_TRUE(result.has_value());
+
+  const auto& text = result->whymlText;
+  // Trimming: parameter declarations should have clean names
+  EXPECT_NE(text.find("(i: int)"), std::string::npos)
+      << "Whitespace around assigns should be trimmed";
+  EXPECT_NE(text.find("(s: int)"), std::string::npos)
+      << "Whitespace around assigns should be trimmed";
+}
+
 } // namespace
 } // namespace arcanum
